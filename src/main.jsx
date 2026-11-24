@@ -101,7 +101,7 @@ function Overview({ onNavigate }) {
         <div className="status-list">
           <div className="status-row"><span className="status-mark pending">01</span><div><b>独立数据库</b><small>服务器独立 SQLite 数据库已初始化，API 健康检查通过</small></div><em>已连接</em></div>
           <div className="status-row"><span className="status-mark pending">02</span><div><b>管理员认证</b><small>登录、会话和密码哈希接口已部署，等待首次超管初始化</small></div><em>待初始化</em></div>
-          <div className="status-row"><span className="status-mark pending">03</span><div><b>支付宝电脑 / 手机网站支付</b><small>电脑网站支付和手机网站支付的下单签名接口已部署；正式收款仍需支付宝产品权限与交易验收</small></div><em>待权限验收</em></div>
+          <div className="status-row"><span className="status-mark pending">03</span><div><b>支付宝 JSAPI 支付</b><small>服务端已加入 JSAPI 交易创建接口；普通浏览器不能直接调起，须确认可用的支付宝 JSAPI 容器。尚未完成真实付款验收</small></div><em>待容器确认</em></div>
           <div className="status-row"><span className="status-mark pending">04</span><div><b>多网站数据隔离</b><small>站点 API Key、订单隔离和 Webhook 交付接口已建立，待接入业务网站</small></div><em>待接入业务</em></div>
         </div>
       </section>
