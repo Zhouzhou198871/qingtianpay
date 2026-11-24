@@ -88,8 +88,8 @@ export async function createQingtianPayOrder({
 - 同一站点 `external_order_no` 必须唯一，重复返回 HTTP 409。
 - 商品必须属于当前 API Key 的站点且处于启用状态。
 - JSAPI 缺少 `buyer_id` 返回 HTTP 400。
-- 商户 PID 未配置时返回 HTTP 503 `alipay_merchant_id_not_configured`，不会创建可收款交易。
+- 商户 Seller ID 已配置；若服务器健康检查显示 `seller_id=false`，支付创建会返回 HTTP 503 `alipay_merchant_id_not_configured`，不会创建可收款交易。
 - 支付宝创建失败返回 HTTP 502；不要因超时盲目重复创建订单。
 
 ## 当前生产验收
-服务器 API 已部署并通过健康检查；现已补上 `alipay.trade.precreate` 二维码创建分支。真实支付宝交易尚未验收：健康检查仍显示 `ALIPAY_SELLER_ID` 未配置，且需确认支付宝商户产品权限。配置完成后必须分别验收二维码扫码、JSAPI、异步通知验签、订单状态更新及 Webhook 自动交付，之后才能标记正式可收款。
+服务器 API 已部署；健康检查已确认数据库、AppID、应用私钥、支付宝公钥及 Seller ID 均已加载。`alipay.trade.precreate` 二维码和 `alipay.trade.create` JSAPI 分支均已部署。真实支付宝交易仍未完成端到端验收：需确认当前支付宝应用已开通对应产品权限，并用真实买家完成小额扫码/JSAPI交易，验证异步通知、订单状态和站点 Webhook 自动交付。未完成这项验收前，不标记为正式收款已验证。
