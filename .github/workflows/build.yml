@@ -1,4 +1,4 @@
-name: Build Qingtian Pay
+name: Build and preview Qingtian Pay
 
 on:
   push:
@@ -9,6 +9,12 @@ on:
 
 permissions:
   contents: read
+  pages: write
+  id-token: write
+
+concurrency:
+  group: qingtianpay-pages
+  cancel-in-progress: true
 
 jobs:
   build:
@@ -20,7 +26,28 @@ jobs:
         uses: actions/setup-node@v4
         with:
           node-version: 20
+          cache: npm
       - name: Install dependencies
         run: npm install
       - name: Build website
         run: npm run build
+      - name: Upload website artifact
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dist
+
+  deploy-preview:
+    if: github.event_name != 'pull_request'
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    runs-on: ubuntu-latest
+    needs: build
+    steps:
+      - name: Configure GitHub Pages
+        uses: actions/configure-pages@v5
+        with:
+          enablement: true
+      - name: Publish preview
+        id: deployment
+        uses: actions/deploy-pages@v4
