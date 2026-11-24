@@ -35,7 +35,7 @@ const modules = [
 ];
 
 const moduleData = {
-  sites: { title: '业务网站', eyebrow: 'BUSINESS SITES', action: '添加业务网站', columns: ['网站名称', '站点标识', '网站地址', 'API 凭证', '状态', '创建时间'], empty: '还没有接入业务网站', note: '添加网站后，每个网站会获得独立的站点标识和 API 凭证。各站点商品、订单与交付数据相互隔离。' },
+  sites: { title: '业务网站', eyebrow: 'BUSINESS SITES', action: '添加业务网站', columns: ['网站名称', '站点标识', '网站地址', 'API 凭证', '交付模式', '状态', '创建时间', '操作'], empty: '还没有接入业务网站', note: '添加网站后，每个网站会获得独立的站点标识和 API 凭证。各站点商品、订单与交付数据相互隔离。' },
   products: { title: '商品管理', eyebrow: 'PRODUCT CATALOG', action: '添加商品', columns: ['商品名称', '所属网站', '商品价格', '币种', '交付方式', '状态', '更新时间'], empty: '暂无商品', note: '商品必须归属于一个业务网站。商品价格以人民币分为单位存储，避免浮点金额误差。' },
   api: { title: 'API 接口管理', eyebrow: 'API ACCESS', action: '创建 API 凭证', columns: ['凭证名称', '所属网站', 'Key 前缀', '权限范围', '最近调用', '有效期', '状态', '操作'], empty: '暂无 API 凭证', note: '每个业务网站使用独立 API 凭证。密钥只在创建时展示一次，数据库只保存 SHA-256 摘要；支持轮换、吊销和调用审计。' },
   orders: { title: '订单管理', eyebrow: 'ORDERS', action: '', columns: ['订单编号', '所属网站', '商品 / 订单标题', '订单金额', '买家信息', '订单状态', '创建时间'], empty: '暂无订单记录', note: '订单数据将按站点隔离展示。支付成功状态以服务端验签和渠道查询结果为准。' },
@@ -123,6 +123,7 @@ function DataModule({ moduleKey, admin }) {
   const [saving, setSaving] = useState(false);
   const [formError, setFormError] = useState('');
   const [createdKey, setCreatedKey] = useState('');
+  const [createdDeliverySecret, setCreatedDeliverySecret] = useState('');
   const [siteOptions, setSiteOptions] = useState([]);
   const [form, setForm] = useState({ name:'', slug:'', base_url:'', delivery_mode:'manual', delivery_url:'', site_id:'', amount:'', description:'', delivery_rule:'', label:'', email:'', password:'', role:'operator' });
   const [currentPassword, setCurrentPassword] = useState('');
@@ -131,7 +132,7 @@ function DataModule({ moduleKey, admin }) {
   const [health, setHealth] = useState(null);
   const endpoints = { sites: '/api/sites', products: '/api/products', api: '/api/api-keys', orders: '/api/orders', payments: '/api/payments', refunds: '/api/refunds', delivery: '/api/deliveries', admins: '/api/admins', logs: '/api/audit-logs', revenue: '/api/analytics/revenue', ledger: '/api/ledger' };
   const fields = {
-    sites: ['name','slug','base_url','key_prefix','status','created_at'],
+    sites: ['name','slug','base_url','key_prefix','delivery_mode','status','created_at','actions'],
     products: ['name','site_name','amount_minor','currency','delivery_mode','status','updated_at'],
     api: ['label','site_name','key_prefix','scope','last_used_at','expires_at','status','actions'],
     orders: ['order_no','site_name','subject','amount_minor','buyer_ref','status','created_at'],
@@ -172,6 +173,10 @@ function DataModule({ moduleKey, admin }) {
       } else if (moduleKey === 'refunds') {
         if (item.status !== 'processing') return;
         url = '/api/refunds/' + encodeURIComponent(item.id) + '/check';
+      } else if (moduleKey === 'sites') {
+        if (item.delivery_mode !== 'webhook') return;
+        url = '/api/sites/' + encodeURIComponent(item.id) + '/delivery-secret';
+        method = 'GET';
       }
       else if (moduleKey === 'admins') {
         if (item.is_protected) return;
@@ -179,9 +184,10 @@ function DataModule({ moduleKey, admin }) {
         method = 'PATCH';
         payload = { status: item.status === 'disabled' ? 'active' : 'disabled' };
       } else return;
-      const response = await apiFetch(url, { method, headers:{'content-type':'application/json'}, credentials:'include', body:JSON.stringify(payload) });
+      const response = await apiFetch(url, { method, headers:{'content-type':'application/json'}, credentials:'include', ...(method === 'GET' ? {} : { body:JSON.stringify(payload) }) });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || '操作失败');
+      if (moduleKey === 'sites') { setCreatedDeliverySecret(result.delivery_secret || ''); return; }
       const refreshed = await apiFetch(endpoints[moduleKey], { credentials:'include' });
       const data = await refreshed.json().catch(() => ({}));
       setItems(data.items || []);
@@ -219,6 +225,7 @@ function DataModule({ moduleKey, admin }) {
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || '创建失败');
       if (moduleKey === 'api') setCreatedKey(data.api_key || '');
+      if (moduleKey === 'sites' && data.delivery_secret) setCreatedDeliverySecret(data.delivery_secret);
       setShowCreate(false);
       setForm({ name:'', slug:'', base_url:'', delivery_mode:'manual', delivery_url:'', site_id:'', amount:'', description:'', delivery_rule:'', label:'', email:'', password:'', role:'operator' });
       const refreshed = await apiFetch(endpoints[moduleKey], { credentials:'include' });
@@ -271,6 +278,7 @@ function DataModule({ moduleKey, admin }) {
   return <div className="workspace-page">
     <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div>{data.action && ['sites','products','api','admins'].includes(moduleKey) && admin?.role !== 'viewer' && <button className="primary-action" onClick={() => { setFormError(''); setShowCreate(true); }}>{data.action}</button>}</div>
     {createdKey && <section className="workspace-card create-panel"><b>新 API Key（仅显示一次，请立即保存）</b><code>{createdKey}</code><button className="filter-reset" onClick={() => setCreatedKey('')}>我已保存</button></section>}
+    {createdDeliverySecret && <section className="workspace-card create-panel"><b>站点 Webhook 签名密钥（请保存到对应业务网站）</b><code>{createdDeliverySecret}</code><button className="filter-reset" onClick={() => setCreatedDeliverySecret('')}>我已保存</button></section>}
     {showCreate && <section className="workspace-card create-panel"><div className="card-heading"><h2>{data.action}</h2><button className="filter-reset" type="button" onClick={() => setShowCreate(false)}>取消</button></div><form onSubmit={submitCreate} className="create-form">
       {moduleKey === 'sites' && <><label>网站名称<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} /></label><label>站点标识（小写字母、数字、短横线）<input required value={form.slug} onChange={e=>setForm({...form,slug:e.target.value})} /></label><label>网站地址<input type="url" value={form.base_url} onChange={e=>setForm({...form,base_url:e.target.value})} placeholder="https://example.com" /></label><label>交付模式<select value={form.delivery_mode} onChange={e=>setForm({...form,delivery_mode:e.target.value})}><option value="manual">人工交付</option><option value="webhook">Webhook 自动交付</option><option value="internal">内部交付</option></select></label>{form.delivery_mode === 'webhook' && <label>HTTPS 交付接口<input required type="url" value={form.delivery_url} onChange={e=>setForm({...form,delivery_url:e.target.value})} placeholder="https://example.com/api/delivery" /></label>}</>}
       {moduleKey === 'products' && <><label>所属网站<select required value={form.site_id} onChange={e=>setForm({...form,site_id:e.target.value})}><option value="">请选择网站</option>{siteOptions.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><label>商品名称<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} /></label><label>价格（人民币元）<input required type="number" min="0.01" step="0.01" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} /></label><label>商品说明<textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})} /></label><label>交付规则 JSON（可选）<textarea value={form.delivery_rule} onChange={e=>setForm({...form,delivery_rule:e.target.value})} placeholder='{"type":"license"}' /></label></>}
@@ -279,7 +287,7 @@ function DataModule({ moduleKey, admin }) {
       {formError && <p className="notice">{formError}</p>}<button className="submit-button" type="submit" disabled={saving}>{saving ? '正在保存…' : '确认创建'}</button>
     </form></section>}
     <div className="table-toolbar"><div className="search-field"><span>⌕</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`搜索${data.title}`} /></div><select value={status} onChange={e => setStatus(e.target.value)}><option value="all">全部状态</option><option value="active">正常 / 已启用</option><option value="pending">待处理</option><option value="disabled">已停用</option></select><button className="filter-reset" onClick={() => {setSearch('');setStatus('all');}}>重置筛选</button></div>
-    <section className="workspace-card table-card"><div className="table-scroll"><table><thead><tr>{data.columns.map(col => <th key={col}>{col}</th>)}</tr></thead><tbody>{loading ? <tr><td colSpan={data.columns.length}><div className="empty-state"><h3>正在读取真实数据…</h3></div></td></tr> : filteredItems.length ? filteredItems.map((item, index) => <tr key={item.id || item.order_no || index}>{(fields[moduleKey] || []).map((field, i) => <td key={field + i}>{field === 'actions' ? (admin?.role === 'viewer' ? '只读' : moduleKey === 'admins' && item.is_protected ? '受保护' : moduleKey === 'delivery' && item.status === 'succeeded' ? '已完成' : <button className="filter-reset" onClick={() => runRowAction(item)}>{moduleKey === 'api' ? '吊销' : moduleKey === 'delivery' ? (['manual','internal'].includes(item.mode) ? '标记已交付' : '重试交付') : moduleKey === 'refunds' ? '核对渠道' : item.status === 'disabled' ? '启用' : '停用'}</button>) : cellValue(item[field], field)}</td>)}</tr>) : <tr><td colSpan={data.columns.length}><div className="empty-state"><div className="empty-symbol">{modules.find(m => m.key === moduleKey).code}</div><h3>{data.empty}</h3><p>{data.note}</p><span>{endpoints[moduleKey] ? '当前没有真实记录或接口暂不可用' : '该模块接口尚未接入'}</span></div></td></tr>}</tbody></table></div></section>
+    <section className="workspace-card table-card"><div className="table-scroll"><table><thead><tr>{data.columns.map(col => <th key={col}>{col}</th>)}</tr></thead><tbody>{loading ? <tr><td colSpan={data.columns.length}><div className="empty-state"><h3>正在读取真实数据…</h3></div></td></tr> : filteredItems.length ? filteredItems.map((item, index) => <tr key={item.id || item.order_no || index}>{(fields[moduleKey] || []).map((field, i) => <td key={field + i}>{field === 'actions' ? (admin?.role === 'viewer' ? '只读' : moduleKey === 'admins' && item.is_protected ? '受保护' : moduleKey === 'delivery' && item.status === 'succeeded' ? '已完成' : <button className="filter-reset" onClick={() => runRowAction(item)}>{moduleKey === 'api' ? '吊销' : moduleKey === 'delivery' ? (['manual','internal'].includes(item.mode) ? '标记已交付' : '重试交付') : moduleKey === 'refunds' ? '核对渠道' : moduleKey === 'sites' ? (item.delivery_mode === 'webhook' ? '查看签名密钥' : '—') : item.status === 'disabled' ? '启用' : '停用'}</button>) : cellValue(item[field], field)}</td>)}</tr>) : <tr><td colSpan={data.columns.length}><div className="empty-state"><div className="empty-symbol">{modules.find(m => m.key === moduleKey).code}</div><h3>{data.empty}</h3><p>{data.note}</p><span>{endpoints[moduleKey] ? '当前没有真实记录或接口暂不可用' : '该模块接口尚未接入'}</span></div></td></tr>}</tbody></table></div></section>
     <div className="module-footnote">筛选控件和列表结构已建立；新增、编辑、删除及状态变更将在对应 API 和权限校验完成后开放。</div>
   </div>;
 }
