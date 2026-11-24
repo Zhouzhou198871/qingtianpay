@@ -18,7 +18,8 @@ Content-Type: application/json
 {
   "product_id": "管理面板中创建的商品 ID",
   "external_order_no": "业务网站自己的唯一订单号",
-  "buyer_id": "当前支付宝用户的 user_id",
+  "payment_method": "alipay_jsapi",
+  "buyer_id": "通过支付宝授权流程取得的当前用户 user_id",
   "buyer_ref": "业务网站内部用户标识",
   "buyer_email": "可选的买家邮箱",
   "metadata": { "source": "website" }
@@ -32,14 +33,13 @@ Content-Type: application/json
 ```json
 {
   "order_no": "QT...",
-  "trade_no": "支付宝交易号",
   "status": "pending",
   "payment_method": "alipay_jsapi",
-  "invoke": { "tradeNO": "支付宝交易号" }
+  "invoke": { "tradeNO": "支付宝创建的交易号" }
 }
 ```
 
-业务网站使用返回的 `invoke.tradeNO` 调用支付宝 JSAPI。只有服务端验签通过的异步通知，或通过签名验证的支付宝交易查询，才能把订单标记为已支付。
+支付中心只调用 `alipay.trade.create` 创建 JSAPI 交易，并返回 `invoke.tradeNO`；业务网站前端必须运行在支付宝支持的 JSAPI 容器内，通过支付宝 JSAPI 的 `tradePay` 能力调起支付。业务网站须先完成支付宝用户授权并取得当前用户的 `user_id`，将其从业务网站服务端传给支付中心；不能把业务网站自己的用户 ID 当作 `buyer_id`。当前接口拒绝 `alipay_page` 和 `alipay_wap`，不会回退到手机网站支付或电脑网站支付。只有服务端验签通过的异步通知，或通过签名验证的支付宝交易查询，才能把订单标记为已支付。
 
 ## 查询订单
 
