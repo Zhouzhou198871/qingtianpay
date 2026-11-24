@@ -244,6 +244,26 @@ async function handle(request, env) {
   const admin = await currentAdmin(request, env);
   if (!admin) return json({ error: "unauthorized" }, 401);
 
+
+  if (path.startsWith("/api/sites/") && path.endsWith("/api-keys") && method === "POST") {
+    const siteId = path.split("/")[3];
+    const site = await env.DB.prepare("SELECT id FROM business_sites WHERE id=?").bind(siteId).first();
+    if (!site) return json({ error: "site_not_found" }, 404);
+    const payload = await body(request);
+    const secret = "qtp_live_" + randomId(32);
+    const id = randomId(16);
+    const label = String(payload?.label || "默认 API 凭证").slice(0,80);
+    await env.DB.prepare("INSERT INTO site_api_keys(id,site_id,label,key_prefix,secret_hash) VALUES(?,?,?,?,?)")
+      .bind(id, siteId, label, secret.slice(0,16), await digest(secret)).run();
+    await audit(env.DB, admin.id, "site.api_key.create", "site_api_keys", id);
+    return json({ id, site_id: siteId, label, key_prefix: secret.slice(0,16), api_key: secret, warning: "请立即保存，完整密钥只展示一次" }, 201);
+  }
+  if (path.startsWith("/api/sites/") && path.endsWith("/api-keys") && method === "GET") {
+    const siteId = path.split("/")[3];
+    const rows = await env.DB.prepare("SELECT id,label,key_prefix,status,last_used_at,expires_at,created_at FROM site_api_keys WHERE site_id=? ORDER BY created_at DESC").bind(siteId).all();
+    return json({ items: rows.results || [] });
+  }
+
   if (path === "/api/sites" && method === "GET") {
     const rows = await env.DB.prepare("SELECT id,name,slug,base_url,status,delivery_mode,created_at,updated_at FROM business_sites ORDER BY created_at DESC").all();
     return json({ items: rows.results || [] });
