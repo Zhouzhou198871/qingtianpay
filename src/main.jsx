@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
@@ -9,22 +9,85 @@ function Brand({ compact = false }) {
   </div>;
 }
 
+const modules = [
+  { key: 'overview', label: '总览', group: '工作台', code: '01', description: '查看支付中心整体运行情况、待处理事项与业务概况。' },
+  { key: 'sites', label: '业务网站', group: '业务管理', code: '02', description: '管理接入支付中心的自有网站、站点状态和独立 API 凭证。' },
+  { key: 'products', label: '商品管理', group: '业务管理', code: '03', description: '按业务网站管理商品名称、价格、状态和交付规则。' },
+  { key: 'orders', label: '订单管理', group: '交易管理', code: '04', description: '统一查询各业务网站订单，查看订单状态和完整交易信息。' },
+  { key: 'payments', label: '支付记录', group: '交易管理', code: '05', description: '查看支付宝交易流水、支付结果与异步通知处理记录。' },
+  { key: 'refunds', label: '退款管理', group: '交易管理', code: '06', description: '处理退款申请，追踪渠道退款状态与退款结果。' },
+  { key: 'delivery', label: '交付管理', group: '交易管理', code: '07', description: '管理支付成功后的自动交付、失败重试和人工补发记录。' },
+  { key: 'admins', label: '管理员', group: '系统管理', code: '08', description: '管理超级管理员、后台角色、登录会话和账号安全。' },
+  { key: 'settings', label: '系统设置', group: '系统管理', code: '09', description: '配置支付渠道、系统参数、安全策略和操作审计。' },
+];
+
+const moduleData = {
+  sites: { title: '业务网站', eyebrow: 'BUSINESS SITES', action: '添加业务网站', columns: ['网站名称', '站点标识', '网站地址', 'API 凭证', '状态', '创建时间'], empty: '还没有接入业务网站', note: '添加网站后，每个网站会获得独立的站点标识和 API 凭证。各站点商品、订单与交付数据相互隔离。' },
+  products: { title: '商品管理', eyebrow: 'PRODUCT CATALOG', action: '添加商品', columns: ['商品名称', '所属网站', '商品价格', '币种', '交付方式', '状态', '更新时间'], empty: '暂无商品', note: '商品必须归属于一个业务网站。商品价格以人民币分为单位存储，避免浮点金额误差。' },
+  orders: { title: '订单管理', eyebrow: 'ORDERS', action: '', columns: ['订单编号', '所属网站', '商品 / 订单标题', '订单金额', '买家信息', '订单状态', '创建时间'], empty: '暂无订单记录', note: '订单数据将按站点隔离展示。支付成功状态以服务端验签和渠道查询结果为准。' },
+  payments: { title: '支付记录', eyebrow: 'PAYMENT TRANSACTIONS', action: '', columns: ['支付流水号', '订单编号', '所属网站', '支付渠道', '支付金额', '支付状态', '支付时间'], empty: '暂无支付流水', note: '首期接入支付宝官方接口。异步通知验签、主动查询补偿和幂等处理将在服务端实现。' },
+  refunds: { title: '退款管理', eyebrow: 'REFUNDS', action: '', columns: ['退款单号', '原订单号', '所属网站', '退款金额', '退款原因', '退款状态', '申请时间'], empty: '暂无退款申请', note: '退款状态将与支付宝渠道结果同步，保留每次操作记录和管理员审计信息。' },
+  delivery: { title: '交付管理', eyebrow: 'FULFILLMENT', action: '', columns: ['交付编号', '订单编号', '所属网站', '交付方式', '尝试次数', '交付状态', '最近执行时间'], empty: '暂无交付任务', note: '交付任务使用幂等键，支持失败重试与人工补发，避免重复交付。' },
+  admins: { title: '管理员', eyebrow: 'ADMINISTRATION', action: '添加管理员', columns: ['管理员账号', '角色', '账号状态', '最近登录', '创建时间'], empty: '管理员数据尚未初始化', note: '三个指定邮箱将作为受保护的超级管理员。密码只保存安全哈希，不写入代码或明文数据库字段。' },
+  settings: { title: '系统设置', eyebrow: 'SYSTEM CONFIGURATION', action: '', columns: [], empty: '', note: '' },
+};
+
+function Overview({ onNavigate }) {
+  const cards = [
+    ['今日订单', '—', '等待订单数据接入', 'orders'],
+    ['今日收款', '¥ —', '等待支付数据接入', 'payments'],
+    ['待处理退款', '—', '等待退款数据接入', 'refunds'],
+    ['接入业务', '—', '等待站点数据接入', 'sites'],
+  ];
+  return <div className="workspace-page">
+    <div className="page-intro"><div><div className="page-eyebrow">OVERVIEW</div><h1>业务总览</h1><p>晴天旗下业务的统一支付管理入口。</p></div><div className="data-state"><i /> 数据接口待接入</div></div>
+    <div className="overview-grid">{cards.map(([label,value,hint,target]) => <button className="metric-card" key={label} onClick={() => onNavigate(target)}><span>{label}</span><strong>{value}</strong><small>{hint}</small></button>)}</div>
+    <div className="overview-columns">
+      <section className="workspace-card"><div className="card-heading"><div><span className="section-kicker">SYSTEM STATUS</span><h2>系统接入进度</h2></div><span className="soft-tag">开发中</span></div>
+        <div className="status-list">
+          <div className="status-row"><span className="status-mark pending">01</span><div><b>独立数据库</b><small>数据表结构已定义，尚未创建生产数据库</small></div><em>待接入</em></div>
+          <div className="status-row"><span className="status-mark pending">02</span><div><b>管理员认证</b><small>待开发安全登录、会话和权限校验</small></div><em>待接入</em></div>
+          <div className="status-row"><span className="status-mark pending">03</span><div><b>支付宝官方支付</b><small>待配置应用参数、签名验签与通知处理</small></div><em>待接入</em></div>
+          <div className="status-row"><span className="status-mark pending">04</span><div><b>多网站数据隔离</b><small>按站点标识隔离商品、订单、退款与交付</small></div><em>待接入</em></div>
+        </div>
+      </section>
+      <section className="workspace-card"><div className="card-heading"><div><span className="section-kicker">WORKSPACE</span><h2>管理模块</h2></div></div>
+        <div className="quick-links">{modules.filter(m => m.key !== 'overview').map(m => <button key={m.key} onClick={() => onNavigate(m.key)}><span>{m.code}</span><b>{m.label}</b><small>{m.description}</small></button>)}</div>
+      </section>
+    </div>
+    <div className="workspace-footnote">当前页面为管理中心开发工作区。统计数据仅在真实 API 和数据库接通后展示，不使用模拟交易数据。</div>
+  </div>;
+}
+
+function DataModule({ moduleKey }) {
+  const data = moduleData[moduleKey];
+  const [search, setSearch] = useState('');
+  const [status, setStatus] = useState('all');
+  if (moduleKey === 'settings') return <div className="workspace-page">
+    <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div></div>
+    <div className="settings-grid">
+      <section className="workspace-card settings-card"><span className="section-kicker">PAYMENT CHANNEL</span><h2>支付渠道</h2><p>首期统一接入支付宝官方支付。应用 ID、私钥、支付宝公钥和证书等敏感配置仅保存在 Cloudflare Secrets。</p><div className="setting-bottom"><span className="soft-tag">尚未配置</span><span>支付宝</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">SECURITY</span><h2>安全策略</h2><p>登录限流、安全会话、管理员权限保护、API 凭证哈希和操作审计。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>访问控制</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">DATA ISOLATION</span><h2>数据隔离</h2><p>每笔业务数据绑定站点上下文。服务端从 API 凭证解析站点身份，不信任客户端传入的站点标识。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>站点隔离</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">AUDIT LOG</span><h2>操作审计</h2><p>记录管理员、操作类型、目标资源、执行结果和时间，拒绝与失败操作同样留痕。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>审计记录</span></div></section>
+    </div>
+  </div>;
+  return <div className="workspace-page">
+    <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div>{data.action && <button className="primary-action" disabled title="数据库与服务端接口接通后启用">{data.action}</button>}</div>
+    <div className="table-toolbar"><div className="search-field"><span>⌕</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`搜索${data.title}`} /></div><select value={status} onChange={e => setStatus(e.target.value)}><option value="all">全部状态</option><option value="active">正常 / 已启用</option><option value="pending">待处理</option><option value="disabled">已停用</option></select><button className="filter-reset" onClick={() => {setSearch('');setStatus('all');}}>重置筛选</button></div>
+    <section className="workspace-card table-card"><div className="table-scroll"><table><thead><tr>{data.columns.map(col => <th key={col}>{col}</th>)}</tr></thead><tbody><tr><td colSpan={data.columns.length}><div className="empty-state"><div className="empty-symbol">{modules.find(m => m.key === moduleKey).code}</div><h3>{data.empty}</h3><p>{data.note}</p><span>数据库尚未连接，当前没有真实记录</span></div></td></tr></tbody></table></div></section>
+    <div className="module-footnote">筛选控件和列表结构已建立；新增、编辑、删除及状态变更将在对应 API 和权限校验完成后开放。</div>
+  </div>;
+}
+
 function Dashboard({ onExit }) {
-  const [active, setActive] = useState('总览');
-  const nav = ['总览', '订单管理', '支付管理', '退款管理', '商品管理', '业务网站', '管理员设置', '系统设置'];
+  const [active, setActive] = useState('overview');
+  const current = modules.find(m => m.key === active) || modules[0];
+  const groups = ['工作台', '业务管理', '交易管理', '系统管理'];
   return <main className="dashboard">
-    <aside className="dash-sidebar"><Brand /><div className="dash-caption">管理中心</div>{nav.map(item =>
-      <button key={item} className={active === item ? 'dash-nav active' : 'dash-nav'} onClick={() => setActive(item)}>{item}</button>)}
-      <button className="dash-exit" onClick={onExit}>返回登录页</button>
-    </aside>
-    <section className="dash-main">
-      <header className="dash-top"><div><b>{active}</b><small>晴天专属支付管理平台</small></div><span className="preview-pill">界面预览模式 · 非真实认证</span></header>
-      <div className="dash-content"><div className="dash-welcome"><div><h1>{active === '总览' ? '业务总览' : active}</h1><p>管理入口与页面结构预览，真实数据和操作接口尚未接入。</p></div></div>
-      {active === '总览' ? <>
-        <div className="dash-stats">{[['今日订单','—'],['今日收款','¥ —'],['待处理退款','—'],['接入业务','—']].map(([label,value])=><article className="dash-stat" key={label}><span>{label}</span><strong>{value}</strong><small>等待连接真实数据</small></article>)}</div>
-        <article className="dash-panel"><h3>系统初始化</h3><ul><li>超级管理员名单：待写入新数据库</li><li>登录认证与安全会话：待接入</li><li>支付宝官方支付接口：待配置</li><li>多网站业务隔离：待开发</li></ul></article>
-      </> : <article className="dash-panel"><h3>{active}模块</h3><p>此模块已预留管理入口，下一步完善页面、数据结构和服务端接口。</p></article>}
-      </div>
+    <aside className="dash-sidebar"><Brand /><div className="sidebar-divider" /><div className="sidebar-groups">{groups.map(group => <div className="sidebar-group" key={group}><div className="dash-caption">{group}</div>{modules.filter(m => m.group === group).map(item => <button key={item.key} className={active === item.key ? 'dash-nav active' : 'dash-nav'} onClick={() => setActive(item.key)}><span className="nav-code">{item.code}</span>{item.label}</button>)}</div>)}</div><div className="sidebar-bottom"><div className="admin-chip"><span className="admin-avatar">管</span><div><b>管理员工作区</b><small>认证服务接入后显示账号</small></div></div><button className="dash-exit" onClick={onExit}>返回登录页</button></div></aside>
+    <section className="dash-main"><header className="dash-top"><div className="breadcrumb"><span>晴天支付中心</span><i>/</i><b>{current.label}</b></div><div className="top-right"><span className="environment-tag">开发环境</span><span className="top-logo">晴</span></div></header>
+      {active === 'overview' ? <Overview onNavigate={setActive} /> : <DataModule key={active} moduleKey={active} />}
     </section>
   </main>;
 }
@@ -33,42 +96,22 @@ function App() {
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
-  const [preview, setPreview] = useState(() => new URLSearchParams(window.location.search).get('workspace') === 'preview');
+  const [workspace, setWorkspace] = useState(() => new URLSearchParams(window.location.search).get('workspace') === 'preview');
   const [notice, setNotice] = useState('');
-  if (preview) return <Dashboard onExit={() => setPreview(false)} />;
+  if (workspace) return <Dashboard onExit={() => setWorkspace(false)} />;
   function handleSubmit(event) { event.preventDefault(); setNotice('登录认证服务尚未启用，请勿在此输入正式账户密码。'); }
   return <main className="page-shell">
     <section className="visual-panel" aria-label="品牌介绍">
       <div className="visual-top"><Brand /></div>
-      <div className="visual-content">
-        <div className="eyebrow"><i /> PRIVATE PAYMENT WORKSPACE</div>
-        <h1>让每一笔收款<br /><em>清晰、有序、可控。</em></h1>
-        <p>为晴天旗下业务打造的统一支付管理中心。订单、支付与交付状态，在一个安全空间内集中管理。</p>
-        <div className="feature-list">
-          <div className="feature"><span className="feature-icon">01</span><div><b>统一收款管理</b><small>集中查看各业务订单与支付状态</small></div></div>
-          <div className="feature"><span className="feature-icon">02</span><div><b>多业务独立隔离</b><small>不同网站的数据与规则分别管理</small></div></div>
-          <div className="feature"><span className="feature-icon">03</span><div><b>支付流程可追踪</b><small>支付、退款与交付记录清晰可查</small></div></div>
-        </div>
-      </div>
-      <div className="visual-footer"><span>SECURE BY DESIGN</span><span>晴天 · 专属支付系统</span></div>
+      <div className="visual-content"><div className="eyebrow"><i /> PRIVATE PAYMENT WORKSPACE</div><h1>让每一笔收款<br /><em>清晰、有序、可控。</em></h1><p>为晴天旗下业务打造的统一支付管理中心。订单、支付与交付状态，在一个安全空间内集中管理。</p>
+        <div className="feature-list"><div className="feature"><span className="feature-icon">01</span><div><b>统一收款管理</b><small>集中查看各业务订单与支付状态</small></div></div><div className="feature"><span className="feature-icon">02</span><div><b>多业务独立隔离</b><small>不同网站的数据与规则分别管理</small></div></div><div className="feature"><span className="feature-icon">03</span><div><b>支付流程可追踪</b><small>支付、退款与交付记录清晰可查</small></div></div></div>
+      </div><div className="visual-footer"><span>SECURE BY DESIGN</span><span>晴天 · 专属支付系统</span></div>
     </section>
-    <section className="login-panel">
-      <div className="mobile-brand"><Brand compact /></div>
-      <div className="login-card">
-        <div className="login-heading"><div className="welcome-tag">WELCOME BACK</div><h2>欢迎回来</h2><p>登录你的晴天支付中心账户</p></div>
-        <form onSubmit={handleSubmit}>
-          <label htmlFor="account">账号</label><div className="input-wrap"><span className="input-symbol">◎</span><input id="account" name="account" type="email" autoComplete="username" placeholder="请输入管理员邮箱" value={account} onChange={e => setAccount(e.target.value)} required /></div>
-          <div className="label-row"><label htmlFor="password">登录密码</label></div>
-          <div className="input-wrap"><span className="input-symbol">⌑</span><input id="password" name="password" type="password" autoComplete="current-password" placeholder="请输入登录密码" value={password} onChange={e => setPassword(e.target.value)} required /></div>
-          <div className="form-options"><label className="remember"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} /><span className="checkmark" />记住账号</label><span className="secure-note"><span>●</span> 安全登录</span></div>
-          <button className="submit-button" type="submit">登录管理中心</button>
-          {notice && <div className="notice" role="status">{notice}</div>}
-        </form>
-        <div className="login-divider"><span>PRIVATE ACCESS</span></div>
-        <div className="access-note"><span className="lock">⌑</span><p>此系统仅供晴天自有业务管理使用<br /><b>仅限授权管理员访问</b></p></div>
-      </div>
-      <footer className="login-footer"><span>© {new Date().getFullYear()} 晴天支付中心</span><span>专属管理 · 安全可靠</span></footer>
-    </section>
+    <section className="login-panel"><div className="mobile-brand"><Brand compact /></div><div className="login-card">
+      <div className="login-heading"><div className="welcome-tag">WELCOME BACK</div><h2>欢迎回来</h2><p>登录你的晴天支付中心账户</p></div>
+      <form onSubmit={handleSubmit}><label htmlFor="account">账号</label><div className="input-wrap"><span className="input-symbol">◎</span><input id="account" name="account" type="email" autoComplete="username" placeholder="请输入管理员邮箱" value={account} onChange={e => setAccount(e.target.value)} required /></div><div className="label-row"><label htmlFor="password">登录密码</label></div><div className="input-wrap"><span className="input-symbol">⌑</span><input id="password" name="password" type="password" autoComplete="current-password" placeholder="请输入登录密码" value={password} onChange={e => setPassword(e.target.value)} required /></div><div className="form-options"><label className="remember"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} /><span className="checkmark" />记住账号</label><span className="secure-note"><span>●</span> 安全登录</span></div><button className="submit-button" type="submit">登录管理中心</button>{notice && <div className="notice" role="status">{notice}</div>}</form>
+      <div className="login-divider"><span>PRIVATE ACCESS</span></div><div className="access-note"><span className="lock">⌑</span><p>此系统仅供晴天自有业务管理使用<br /><b>仅限授权管理员访问</b></p></div>
+    </div><footer className="login-footer"><span>© {new Date().getFullYear()} 晴天支付中心</span><span>专属管理 · 安全可靠</span></footer></section>
   </main>;
 }
 
