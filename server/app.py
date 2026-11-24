@@ -31,6 +31,12 @@ def db():
 def uid(): return uuid.uuid4().hex
 def rows(cur): return [dict(x) for x in cur.fetchall()]
 def digest(s): return hashlib.sha256(s.encode()).hexdigest()
+def amount_to_minor(value):
+    amount=Decimal(str(value))
+    if not amount.is_finite(): raise ValueError("invalid_amount")
+    minor=amount*100
+    if minor!=minor.to_integral_value(): raise ValueError("amount_must_have_at_most_two_decimals")
+    return int(minor)
 def site_delivery_secret(site_id):
     if not DELIVERY_SECRET: raise RuntimeError("delivery_secret_not_configured")
     return hmac.new(DELIVERY_SECRET.encode(),("qingtianpay:site:"+site_id).encode(),hashlib.sha256).hexdigest()
@@ -134,6 +140,7 @@ def safe_webhook(url):
     import urllib.parse
     u=urllib.parse.urlparse(url)
     if u.scheme!="https" or not u.hostname or u.username or u.password: raise ValueError("webhook_https_required")
+    if u.port not in (None,443): raise ValueError("webhook_port_not_allowed")
     for info in socket.getaddrinfo(u.hostname,443,type=socket.SOCK_STREAM):
         ip=ipaddress.ip_address(info[4][0])
         if not ip.is_global: raise ValueError("webhook_private_address_blocked")
@@ -369,7 +376,7 @@ async def create_payment(req:FRequest):
                 if isinstance(raw,bool) or int(raw)!=float(raw): raise ValueError()
                 amount_minor=int(raw)
             elif b.get("amount") is not None:
-                amount_minor=int((Decimal(str(b["amount"]))*100).quantize(Decimal("1")))
+                amount_minor=amount_to_minor(b["amount"])
             else:
                 raise ValueError()
         except (ValueError, TypeError, InvalidOperation, OverflowError):
@@ -441,9 +448,9 @@ async def alipay_notify(req:FRequest):
     form=await req.form(); p={k:str(v) for k,v in form.items()}
     if not verify_alipay(p): return Response("failure",status_code=400,media_type="text/plain")
     c=db(); o=c.execute("SELECT o.*,p.id payment_id,p.amount_minor payment_amount,p.channel_out_trade_no FROM orders o JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND p.channel='alipay'",(p.get("out_trade_no"),)).fetchone()
-    try: notified_amount=int((Decimal(str(p.get("total_amount","0")))*100).quantize(Decimal("1")))
+    try: notified_amount=amount_to_minor(p.get("total_amount","0"))
     except (InvalidOperation, ValueError, TypeError): notified_amount=-1
-    if not ALIPAY_SELLER_ID or not o or p.get("seller_id")!=ALIPAY_SELLER_ID or o["channel_out_trade_no"]!=p.get("out_trade_no") or o["payment_amount"]!=notified_amount or o["amount_minor"]!=notified_amount or not p.get("trade_no") or not p.get("notify_id"): c.close(); return Response("failure",status_code=400,media_type="text/plain")
+    if not ALIPAY_SELLER_ID or not o or p.get("seller_id")!=ALIPAY_SELLER_ID or o["channel_out_trade_no"]!=p.get("out_trade_no") or (o["channel_trade_no"] and o["channel_trade_no"]!=p.get("trade_no")) or o["payment_amount"]!=notified_amount or o["amount_minor"]!=notified_amount or not p.get("trade_no") or not p.get("notify_id"): c.close(); return Response("failure",status_code=400,media_type="text/plain")
     if p.get("trade_status") in ("TRADE_SUCCESS","TRADE_FINISHED"):
         c.execute("UPDATE payments SET status='succeeded',channel_trade_no=?,notified_at=CURRENT_TIMESTAMP,paid_at=COALESCE(paid_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=? AND status!='succeeded'",(p.get("trade_no"),o["payment_id"]))
         c.execute("UPDATE orders SET status='paid',paid_at=COALESCE(paid_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('pending','failed')",(o["id"],)); c.commit(); deliver(c,o["id"])
@@ -471,7 +478,7 @@ def site_order(order_no:str,req:FRequest):
     if o["status"] in ("pending","failed") and ALIPAY_SELLER_ID:
         try:
             result=alipay("alipay.trade.query",{"out_trade_no":order_no})
-            paid_amount=int((Decimal(str(result.get("total_amount","0")))*100).quantize(Decimal("1")))
+            paid_amount=amount_to_minor(result.get("total_amount","0"))
             if result.get("seller_id")==ALIPAY_SELLER_ID and paid_amount==o["amount_minor"] and result.get("trade_status") in ("TRADE_SUCCESS","TRADE_FINISHED"):
                 c.execute("UPDATE payments SET status='succeeded',channel_trade_no=?,paid_at=COALESCE(paid_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=? AND status!='succeeded'",(result.get("trade_no"),o["payment_id"]))
                 c.execute("UPDATE orders SET status='paid',paid_at=COALESCE(paid_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('pending','failed')",(o["id"],))
