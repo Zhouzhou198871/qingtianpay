@@ -125,7 +125,14 @@ async function alipayRequest(env, method, bizContent, notifyUrl) {
   try { data = JSON.parse(textBody); } catch { throw new Error("alipay_invalid_json_response"); }
   const resultKey = method.replaceAll(".", "_") + "_response";
   const result = data[resultKey];
-  if (!result || result.code !== "10000") throw new Error("alipay_api_error:" + (result?.sub_msg || result?.msg || "unknown"));
+  if (!result || typeof result !== "object") throw new Error("alipay_invalid_response_payload");
+  if (!data.sign || !(await crypto.subtle.verify(
+    "RSASSA-PKCS1-v1_5",
+    await alipayPublicKey(env),
+    pemBytes(data.sign),
+    encoder.encode(JSON.stringify(result))
+  ))) throw new Error("alipay_response_signature_invalid");
+  if (result.code !== "10000") throw new Error("alipay_api_error:" + (result?.sub_msg || result?.msg || "unknown"));
   return result;
 }
 async function verifyAlipayNotify(env, params) {
@@ -149,6 +156,8 @@ async function signDelivery(secret, payload) {
 async function runDelivery(db, env, orderId) {
   const order = await db.prepare("SELECT o.*,p.name AS product_name,p.delivery_rule_json,s.delivery_mode,s.delivery_config_json,s.name AS site_name FROM orders o LEFT JOIN products p ON p.id=o.product_id JOIN business_sites s ON s.id=o.site_id WHERE o.id=? AND o.status='paid'").bind(orderId).first();
   if (!order) return;
+  // Recover a task whose previous Worker execution died while it was processing.
+  await db.prepare("UPDATE delivery_records SET status='failed',last_error='delivery_lease_expired',updated_at=CURRENT_TIMESTAMP WHERE order_id=? AND status='processing' AND updated_at < datetime('now','-5 minutes')").bind(orderId).run();
   const idempotencyKey = "delivery:" + order.id;
   await db.prepare("INSERT OR IGNORE INTO delivery_records(id,site_id,order_id,idempotency_key,mode,status) VALUES(?,?,?,?,?,'pending')")
     .bind(randomId(16), order.site_id, order.id, idempotencyKey, order.delivery_mode).run();
