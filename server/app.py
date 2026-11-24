@@ -137,7 +137,7 @@ def safe_webhook(url):
         if not ip.is_global: raise ValueError("webhook_private_address_blocked")
     return url
 def deliver(c,order_id):
-    o=c.execute("SELECT o.*,s.delivery_mode,s.delivery_config_json,p.name product_name FROM orders o JOIN business_sites s ON s.id=o.site_id LEFT JOIN products p ON p.id=o.product_id WHERE o.id=? AND o.status='paid'",(order_id,)).fetchone()
+    o=c.execute("SELECT o.*,s.delivery_mode,s.delivery_config_json,COALESCE(p.name,o.subject) product_name FROM orders o JOIN business_sites s ON s.id=o.site_id LEFT JOIN products p ON p.id=o.product_id WHERE o.id=? AND o.status='paid'",(order_id,)).fetchone()
     if not o: return
     mode=o["delivery_mode"]; key="delivery:"+o["id"]
     c.execute("INSERT OR IGNORE INTO delivery_records(id,site_id,order_id,idempotency_key,mode,status) VALUES(?,?,?,?,?,'pending')",(uid(),o["site_id"],o["id"],key,mode))
@@ -335,30 +335,60 @@ async def create_payment(req:FRequest):
     b=json_body(await req.json()); c=db(); k=site_key(req,c)
     if not ALIPAY_SELLER_ID:
         c.close(); raise HTTPException(503,"alipay_merchant_id_not_configured")
-    product=c.execute("SELECT * FROM products WHERE id=? AND site_id=? AND status='active'",(b.get("product_id"),k["site_id"])).fetchone()
-    if not product: c.close(); raise HTTPException(404,"product_not_found")
-    if product["currency"] != "CNY": c.close(); raise HTTPException(400,"alipay_only_supports_cny")
     ext=str(b.get("external_order_no","")).strip()
-    # This merchant is provisioned for Alipay JSAPI only. Do not silently
-    # fall back to website-pay products that may not be enabled.
     method=str(b.get("payment_method","alipay_jsapi")).strip().lower()
     if method != "alipay_jsapi":
         c.close(); raise HTTPException(400,"unsupported_payment_method_jsapi_only")
-    # Buyer identity is obtained from Alipay OAuth after the customer scans the checkout QR.
-    if not ext:
-        c.close(); raise HTTPException(400,"external_order_no_required")
+    if not ext or len(ext)>128:
+        c.close(); raise HTTPException(400,"external_order_no_required_or_too_long")
+    # Product catalogue is optional. A supplied product_id uses its stored
+    # price; otherwise the calling site supplies amount and subject.
+    product_id=None
+    product_name=""
+    currency=str(b.get("currency","CNY")).upper()
+    if b.get("product_id"):
+        product=c.execute("SELECT * FROM products WHERE id=? AND site_id=? AND status='active'",(str(b["product_id"]),k["site_id"])).fetchone()
+        if not product:
+            c.close(); raise HTTPException(404,"product_not_found")
+        product_id=product["id"]
+        amount_minor=int(product["amount_minor"])
+        currency=str(product["currency"]).upper()
+        product_name=str(product["name"])
+        if b.get("currency") and str(b["currency"]).upper()!=currency:
+            c.close(); raise HTTPException(400,"product_currency_mismatch")
+    else:
+        try:
+            if b.get("amount_minor") is not None:
+                raw=b["amount_minor"]
+                if isinstance(raw,bool) or int(raw)!=float(raw): raise ValueError()
+                amount_minor=int(raw)
+            elif b.get("amount") is not None:
+                amount_minor=int((Decimal(str(b["amount"]))*100).quantize(Decimal("1")))
+            else:
+                raise ValueError()
+        except (ValueError, TypeError, InvalidOperation, OverflowError):
+            c.close(); raise HTTPException(400,"amount_minor_or_amount_required")
+        product_name=str(b.get("subject") or b.get("description") or "").strip()
+    subject=str(b.get("subject") or product_name or "").strip()
+    if currency!="CNY":
+        c.close(); raise HTTPException(400,"alipay_only_supports_cny")
+    if amount_minor<=0 or amount_minor>100000000000:
+        c.close(); raise HTTPException(400,"invalid_amount")
+    if not subject or len(subject)>128:
+        c.close(); raise HTTPException(400,"subject_required_or_too_long")
     old=c.execute("SELECT order_no,status FROM orders WHERE site_id=? AND external_order_no=?",(k["site_id"],ext)).fetchone()
-    if old: c.close(); raise HTTPException(409,"duplicate_external_order")
+    if old:
+        c.close(); raise HTTPException(409,"duplicate_external_order")
     oid=uid(); order_no="QT"+time.strftime("%y%m%d%H%M%S")+secrets.token_hex(4).upper(); pid=uid()
-    c.execute("INSERT INTO orders(id,site_id,order_no,external_order_no,product_id,buyer_ref,buyer_email,amount_minor,currency,status,subject,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,'pending',?,?)",(oid,k["site_id"],order_no,ext,product["id"],b.get("buyer_ref"),b.get("buyer_email"),product["amount_minor"],product["currency"],product["name"],json.dumps(b.get("metadata") or {})))
-    c.execute("INSERT INTO payments(id,site_id,order_id,channel,channel_out_trade_no,amount_minor,status) VALUES(?,?,?,'alipay',?,?,'processing')",(pid,k["site_id"],oid,order_no,product["amount_minor"])); c.commit()
+    c.execute("INSERT INTO orders(id,site_id,order_no,external_order_no,product_id,buyer_ref,buyer_email,amount_minor,currency,status,subject,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,'pending',?,?)",(oid,k["site_id"],order_no,ext,product_id,b.get("buyer_ref"),b.get("buyer_email"),amount_minor,currency,subject,json.dumps(b.get("metadata") or {},ensure_ascii=False)))
+    c.execute("INSERT INTO payments(id,site_id,order_id,channel,channel_out_trade_no,amount_minor,status) VALUES(?,?,?,'alipay',?,?,'processing')",(pid,k["site_id"],oid,order_no,amount_minor)); c.commit()
     checkout_token=secrets.token_urlsafe(32)
     c.execute("INSERT INTO payment_checkout_sessions(id,order_id,token_hash,expires_at) VALUES(?,?,?,datetime('now','+15 minutes'))",(uid(),oid,digest(checkout_token)))
     c.execute("UPDATE payments SET status='created',channel_response_json=? WHERE id=?",(json.dumps({"method":"alipay_jsapi_oauth_pending"}),pid))
     c.commit(); c.close()
     checkout_url="https://pay-api.lynli.me/api/checkout/"+checkout_token
     qr_image_url="https://pay-api.lynli.me/api/qr?"+urlencode({"url":checkout_url})
-    return {"order_no":order_no,"status":"pending","payment_method":"alipay_jsapi","checkout_url":checkout_url,"qr_image_url":qr_image_url,"expires_in":900}
+    return {"order_no":order_no,"external_order_no":ext,"subject":subject,"amount_minor":amount_minor,"currency":currency,"status":"pending","payment_method":"alipay_jsapi","checkout_url":checkout_url,"qr_image_url":qr_image_url,"expires_in":900}
 @app.get("/api/checkout/{token}")
 def checkout_start(token:str):
     c=db()
