@@ -30,12 +30,12 @@ const modules = [
 const moduleData = {
   sites: { title: '业务网站', eyebrow: 'BUSINESS SITES', action: '添加业务网站', columns: ['网站名称', '站点标识', '网站地址', 'API 凭证', '状态', '创建时间'], empty: '还没有接入业务网站', note: '添加网站后，每个网站会获得独立的站点标识和 API 凭证。各站点商品、订单与交付数据相互隔离。' },
   products: { title: '商品管理', eyebrow: 'PRODUCT CATALOG', action: '添加商品', columns: ['商品名称', '所属网站', '商品价格', '币种', '交付方式', '状态', '更新时间'], empty: '暂无商品', note: '商品必须归属于一个业务网站。商品价格以人民币分为单位存储，避免浮点金额误差。' },
-  api: { title: 'API 接口管理', eyebrow: 'API ACCESS', action: '创建 API 凭证', columns: ['凭证名称', '所属网站', 'Key 前缀', '权限范围', '最近调用', '有效期', '状态'], empty: '暂无 API 凭证', note: '每个业务网站使用独立 API 凭证。密钥只在创建时展示一次，数据库只保存 SHA-256 摘要；支持轮换、吊销和调用审计。' },
+  api: { title: 'API 接口管理', eyebrow: 'API ACCESS', action: '创建 API 凭证', columns: ['凭证名称', '所属网站', 'Key 前缀', '权限范围', '最近调用', '有效期', '状态', '操作'], empty: '暂无 API 凭证', note: '每个业务网站使用独立 API 凭证。密钥只在创建时展示一次，数据库只保存 SHA-256 摘要；支持轮换、吊销和调用审计。' },
   orders: { title: '订单管理', eyebrow: 'ORDERS', action: '', columns: ['订单编号', '所属网站', '商品 / 订单标题', '订单金额', '买家信息', '订单状态', '创建时间'], empty: '暂无订单记录', note: '订单数据将按站点隔离展示。支付成功状态以服务端验签和渠道查询结果为准。' },
   payments: { title: '支付记录', eyebrow: 'PAYMENT TRANSACTIONS', action: '', columns: ['支付流水号', '订单编号', '所属网站', '支付渠道', '支付金额', '支付状态', '支付时间'], empty: '暂无支付流水', note: '首期接入支付宝官方接口。异步通知验签、主动查询补偿和幂等处理将在服务端实现。' },
   refunds: { title: '退款管理', eyebrow: 'REFUNDS', action: '', columns: ['退款单号', '原订单号', '所属网站', '退款金额', '退款原因', '退款状态', '申请时间'], empty: '暂无退款申请', note: '退款状态将与支付宝渠道结果同步，保留每次操作记录和管理员审计信息。' },
   delivery: { title: '交付管理', eyebrow: 'FULFILLMENT', action: '', columns: ['交付编号', '订单编号', '所属网站', '交付方式', '尝试次数', '交付状态', '最近执行时间'], empty: '暂无交付任务', note: '交付任务使用幂等键，支持失败重试与人工补发，避免重复交付。' },
-  admins: { title: '管理员管理', eyebrow: 'ADMINISTRATION', action: '添加管理员', columns: ['管理员账号', '管理员名称', '角色', '模块权限', '账号状态', '最近登录', '创建时间'], empty: '管理员数据尚未初始化', note: '三个指定邮箱将作为受保护的超级管理员。可在此管理其他管理员、角色授权、账号启停和登录记录。密码只保存安全哈希，不写入代码或明文数据库字段。' },
+  admins: { title: '管理员管理', eyebrow: 'ADMINISTRATION', action: '添加管理员', columns: ['管理员账号', '管理员名称', '角色', '模块权限', '账号状态', '最近登录', '创建时间', '操作'], empty: '管理员数据尚未初始化', note: '三个指定邮箱将作为受保护的超级管理员。可在此管理其他管理员、角色授权、账号启停和登录记录。密码只保存安全哈希，不写入代码或明文数据库字段。' },
   revenue: { title: '收款统计', eyebrow: 'REVENUE ANALYTICS', action: '', columns: ['统计日期', '所属网站', '订单总数', '支付成功', '收款金额', '退款金额', '净收款'], empty: '暂无收款统计', note: '统计数据以真实支付记录为基础，支持按网站和日期汇总，不展示模拟金额。' },
   ledger: { title: '资金流水', eyebrow: 'FINANCIAL LEDGER', action: '', columns: ['流水编号', '所属网站', '关联订单', '流水类型', '发生金额', '渠道交易号', '发生时间'], empty: '暂无资金流水', note: '收款和退款流水分别记录，保留渠道交易号与关联订单，便于核对追踪。' },
   security: { title: '安全设置', eyebrow: 'SECURITY CENTER', action: '', columns: [], empty: '', note: '' },
@@ -90,12 +90,12 @@ function DataModule({ moduleKey, admin }) {
   const fields = {
     sites: ['name','slug','base_url','key_prefix','status','created_at'],
     products: ['name','site_name','amount_minor','currency','delivery_mode','status','updated_at'],
-    api: ['label','site_name','key_prefix','scope','last_used_at','expires_at','status'],
+    api: ['label','site_name','key_prefix','scope','last_used_at','expires_at','status','actions'],
     orders: ['order_no','site_name','subject','amount_minor','buyer_ref','status','created_at'],
     payments: ['channel_trade_no','order_no','site_name','channel','amount_minor','status','paid_at'],
     refunds: ['refund_no','order_no','site_name','amount_minor','reason','status','created_at'],
     delivery: ['id','order_no','site_name','mode','attempt_count','status','updated_at'],
-    admins: ['email','email','role','is_protected','status','last_login_at','created_at'],
+    admins: ['email','email','role','is_protected','status','last_login_at','created_at','actions'],
     logs: ['created_at','actor_email','action','resource_type','resource_id','result'],
     revenue: ['date','site_name','order_count','paid_count','gross_minor','refund_minor','net_minor'],
     ledger: ['id','site_name','order_no','type','amount_minor','channel_trade_no','created_at'],
@@ -119,6 +119,24 @@ function DataModule({ moduleKey, admin }) {
     if (!['products','api'].includes(moduleKey)) return;
     fetch('/api/sites', { credentials:'include' }).then(r => r.json()).then(data => setSiteOptions(data.items || [])).catch(() => setSiteOptions([]));
   }, [moduleKey]);
+  async function runRowAction(item) {
+    try {
+      let url = '', method = 'POST', payload = {};
+      if (moduleKey === 'api') url = '/api/api-keys/' + encodeURIComponent(item.id) + '/revoke';
+      else if (moduleKey === 'admins') {
+        if (item.is_protected) return;
+        url = '/api/admins/' + encodeURIComponent(item.id);
+        method = 'PATCH';
+        payload = { status: item.status === 'disabled' ? 'active' : 'disabled' };
+      } else return;
+      const response = await fetch(url, { method, headers:{'content-type':'application/json'}, credentials:'include', body:JSON.stringify(payload) });
+      const result = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(result.error || '操作失败');
+      const refreshed = await fetch(endpoints[moduleKey], { credentials:'include' });
+      const data = await refreshed.json().catch(() => ({}));
+      setItems(data.items || []);
+    } catch (error) { setFormError(error.message || '操作失败'); }
+  }
   async function submitPasswordChange(event) {
     event.preventDefault(); setPasswordNotice('');
     if (newPassword.length < 12) { setPasswordNotice('新密码至少需要 12 位。'); return; }
@@ -211,7 +229,7 @@ function DataModule({ moduleKey, admin }) {
       {formError && <p className="notice">{formError}</p>}<button className="submit-button" type="submit" disabled={saving}>{saving ? '正在保存…' : '确认创建'}</button>
     </form></section>}
     <div className="table-toolbar"><div className="search-field"><span>⌕</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`搜索${data.title}`} /></div><select value={status} onChange={e => setStatus(e.target.value)}><option value="all">全部状态</option><option value="active">正常 / 已启用</option><option value="pending">待处理</option><option value="disabled">已停用</option></select><button className="filter-reset" onClick={() => {setSearch('');setStatus('all');}}>重置筛选</button></div>
-    <section className="workspace-card table-card"><div className="table-scroll"><table><thead><tr>{data.columns.map(col => <th key={col}>{col}</th>)}</tr></thead><tbody>{loading ? <tr><td colSpan={data.columns.length}><div className="empty-state"><h3>正在读取真实数据…</h3></div></td></tr> : filteredItems.length ? filteredItems.map((item, index) => <tr key={item.id || item.order_no || index}>{(fields[moduleKey] || []).map((field, i) => <td key={field + i}>{cellValue(item[field], field)}</td>)}</tr>) : <tr><td colSpan={data.columns.length}><div className="empty-state"><div className="empty-symbol">{modules.find(m => m.key === moduleKey).code}</div><h3>{data.empty}</h3><p>{data.note}</p><span>{endpoints[moduleKey] ? '当前没有真实记录或接口暂不可用' : '该模块接口尚未接入'}</span></div></td></tr>}</tbody></table></div></section>
+    <section className="workspace-card table-card"><div className="table-scroll"><table><thead><tr>{data.columns.map(col => <th key={col}>{col}</th>)}</tr></thead><tbody>{loading ? <tr><td colSpan={data.columns.length}><div className="empty-state"><h3>正在读取真实数据…</h3></div></td></tr> : filteredItems.length ? filteredItems.map((item, index) => <tr key={item.id || item.order_no || index}>{(fields[moduleKey] || []).map((field, i) => <td key={field + i}>{field === 'actions' ? (moduleKey === 'admins' && item.is_protected ? '受保护' : <button className="filter-reset" onClick={() => runRowAction(item)}>{moduleKey === 'api' ? '吊销' : item.status === 'disabled' ? '启用' : '停用'}</button>) : cellValue(item[field], field)}</td>)}</tr>) : <tr><td colSpan={data.columns.length}><div className="empty-state"><div className="empty-symbol">{modules.find(m => m.key === moduleKey).code}</div><h3>{data.empty}</h3><p>{data.note}</p><span>{endpoints[moduleKey] ? '当前没有真实记录或接口暂不可用' : '该模块接口尚未接入'}</span></div></td></tr>}</tbody></table></div></section>
     <div className="module-footnote">筛选控件和列表结构已建立；新增、编辑、删除及状态变更将在对应 API 和权限校验完成后开放。</div>
   </div>;
 }
