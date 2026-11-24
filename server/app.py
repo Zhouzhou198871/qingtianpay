@@ -396,7 +396,8 @@ def alipay_oauth_callback(auth_code:str="",state:str=""):
         launch="https://pay.lynli.me/payment/launch?"+urlencode({"order_no":x["order_no"],"trade_no":trade_no})
         return Response(status_code=302,headers={"Location":launch})
     except Exception:
-        c.close()
+        c.execute("UPDATE payment_checkout_sessions SET used_at=NULL WHERE id=?",(x["session_id"],))
+        c.commit(); c.close()
         raise HTTPException(502,"alipay_authorize_or_trade_create_failed")
 
 @app.post("/api/alipay/notify")
