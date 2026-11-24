@@ -362,16 +362,21 @@ function PaymentLaunch() {
       if (done || !window.AlipayJSBridge) return;
       done = true;
       setStarted(true);
-      window.AlipayJSBridge.call('tradePay', { tradeNO }, result => {
-        const code = String(result?.resultCode || '');
-        if (code === '9000') setState('支付宝已返回成功，正在向服务器核实到账…');
-        else if (code === '8000') setState('支付宝处理中，正在核实订单，请勿重复付款。');
-        else if (code === '6001') setState('你已取消支付。正在核实订单状态…');
-        else if (code === '6002') setState('网络异常，正在向服务器核实订单状态…');
-        else if (code === '6004') setState('支付结果未知，正在向服务器核实，请勿重复付款。');
-        else setState('支付宝返回状态（' + (code || '未知') + '），正在核实服务器订单。');
+      try {
+        window.AlipayJSBridge.call('tradePay', { tradeNO }, result => {
+          const code = String(result?.resultCode || '');
+          if (code === '9000') setState('支付宝已返回成功，正在向服务器核实到账…');
+          else if (code === '8000') setState('支付宝处理中，正在核实订单，请勿重复付款。');
+          else if (code === '6001') setState('你已取消支付。正在核实订单状态…');
+          else if (code === '6002') setState('网络异常，正在向服务器核实订单状态…');
+          else if (code === '6004') setState('支付结果未知，正在向服务器核实，请勿重复付款。');
+          else setState('支付宝返回状态（' + (code || '未知') + '），正在核实服务器订单。');
+          beginPolling();
+        });
+      } catch {
+        setState('支付宝收银台未能唤起，正在向服务器核实订单状态；请勿重复付款。');
         beginPolling();
-      });
+      }
     };
     if (window.AlipayJSBridge) launch();
     else document.addEventListener('AlipayJSBridgeReady', launch, { once: true });
