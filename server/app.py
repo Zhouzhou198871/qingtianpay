@@ -63,7 +63,8 @@ def read_key(path):
     if not os.path.isfile(path): raise RuntimeError("alipay_key_not_configured")
     return open(path,"rb").read()
 def sign_alipay(params):
-    text="&".join(f"{k}={params[k]}" for k in sorted(params) if params[k] not in (None,""))
+    # Alipay RSA2 canonical string excludes both sign and sign_type.
+    text="&".join(f"{k}={params[k]}" for k in sorted(params) if k not in ("sign","sign_type") and params[k] not in (None,""))
     key=serialization.load_pem_private_key(read_key(APP_PRIVATE_KEY_FILE),password=None)
     return base64.b64encode(key.sign(text.encode(),padding.PKCS1v15(),hashes.SHA256())).decode()
 def verify_alipay(params):
