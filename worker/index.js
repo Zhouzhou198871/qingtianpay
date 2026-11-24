@@ -434,8 +434,26 @@ async function handle(request, env) {
     const siteKey = await siteFromApiKey(request, env.DB);
     if (!siteKey) return json({ error: "invalid_site_api_key" }, 401);
     const orderNo = decodeURIComponent(path.slice("/api/v1/orders/".length));
-    const order = await env.DB.prepare("SELECT order_no,external_order_no,status,amount_minor,currency,created_at,paid_at FROM orders WHERE order_no=? AND site_id=?").bind(orderNo, siteKey.site_id).first();
-    return order ? json({ order }) : json({ error: "order_not_found" }, 404);
+    let order = await env.DB.prepare("SELECT o.order_no,o.id,o.external_order_no,o.status,o.amount_minor,o.currency,o.created_at,o.paid_at,p.id AS payment_id FROM orders o JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND o.site_id=?").bind(orderNo, siteKey.site_id).first();
+    if (!order) return json({ error: "order_not_found" }, 404);
+    if (order.status === "pending") {
+      try {
+        const result = await alipayRequest(env, "alipay.trade.query", { out_trade_no: order.order_no });
+        if (["TRADE_SUCCESS","TRADE_FINISHED"].includes(result.trade_status) && Math.round(Number(result.total_amount) * 100) === order.amount_minor) {
+          await env.DB.prepare("UPDATE payments SET status='succeeded',channel_trade_no=?,channel_response_json=?,paid_at=COALESCE(paid_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(result.trade_no || null,JSON.stringify(result),order.payment_id).run();
+          await env.DB.prepare("UPDATE orders SET status='paid',paid_at=COALESCE(paid_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(order.id).run();
+          await runDelivery(env.DB,env,order.id);
+        } else if (result.trade_status === "TRADE_CLOSED") {
+          await env.DB.prepare("UPDATE payments SET status='closed',channel_response_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(JSON.stringify(result),order.payment_id).run();
+          await env.DB.prepare("UPDATE orders SET status='closed',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(order.id).run();
+        }
+      } catch {}
+      order = await env.DB.prepare("SELECT order_no,external_order_no,status,amount_minor,currency,created_at,paid_at FROM orders WHERE id=?").bind(order.id).first();
+    } else {
+      const { id, payment_id, ...publicOrder } = order;
+      order = publicOrder;
+    }
+    return json({ order });
   }
 
   if (path === "/api/payments" && method === "GET") {
