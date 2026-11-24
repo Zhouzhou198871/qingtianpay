@@ -74,6 +74,44 @@ function DataModule({ moduleKey }) {
   const data = moduleData[moduleKey];
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
+  const [items, setItems] = useState([]);
+  const [loading, setLoading] = useState(true);
+  const endpoints = { sites: '/api/sites', products: '/api/products', orders: '/api/orders', payments: '/api/payments', refunds: '/api/refunds', delivery: '/api/deliveries', admins: '/api/admins', logs: '/api/audit-logs' };
+  const fields = {
+    sites: ['name','slug','base_url','key_prefix','status','created_at'],
+    products: ['name','site_name','amount_minor','currency','delivery_mode','status','updated_at'],
+    orders: ['order_no','site_name','subject','amount_minor','buyer_ref','status','created_at'],
+    payments: ['id','order_no','site_name','channel','amount_minor','status','paid_at'],
+    refunds: ['refund_no','order_no','site_name','amount_minor','reason','status','created_at'],
+    delivery: ['id','order_no','site_name','mode','attempt_count','status','updated_at'],
+    admins: ['email','email','role','is_protected','status','last_login_at','created_at'],
+    logs: ['created_at','actor_email','action','resource_type','resource_id','result'],
+  };
+  useEffect(() => {
+    let alive = true;
+    const endpoint = endpoints[moduleKey];
+    if (!endpoint) { setItems([]); setLoading(false); return () => { alive = false; }; }
+    setLoading(true);
+    fetch(endpoint, { credentials: 'include' }).then(async response => {
+      const payload = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(payload.error || '接口读取失败');
+      return payload.items || [];
+    }).then(rows => { if (alive) setItems(rows); }).catch(() => { if (alive) setItems([]); }).finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [moduleKey]);
+  const filteredItems = items.filter(item => {
+    const matchesSearch = !search || JSON.stringify(item).toLowerCase().includes(search.toLowerCase());
+    const matchesStatus = status === 'all' || item.status === status || (status === 'active' && ['succeeded','paid'].includes(item.status)) || (status === 'pending' && ['processing','created'].includes(item.status));
+    return matchesSearch && matchesStatus;
+  });
+  function cellValue(value, field) {
+    if (value === null || value === undefined || value === '') return '—';
+    if (field === 'amount_minor') return '¥' + (Number(value) / 100).toFixed(2);
+    if (field === 'is_protected') return value ? '受保护' : '普通管理员';
+    if (field === 'status') return ({ active: '正常', disabled: '停用', pending: '待处理', paid: '已支付', succeeded: '成功', failed: '失败', processing: '处理中', refunded: '已退款', closed: '已关闭' })[value] || value;
+    if (field.endsWith('_at')) return String(value).replace('T',' ').replace('Z','').slice(0,19);
+    return String(value);
+  }
   if (moduleKey === 'profile') return <div className="workspace-page">
     <div className="page-intro"><div><div className="page-eyebrow">MY ACCOUNT</div><h1>个人中心</h1><p>管理当前登录账号的资料、安全凭证和登录状态。</p></div></div>
     <div className="settings-grid">
@@ -104,7 +142,7 @@ function DataModule({ moduleKey }) {
   return <div className="workspace-page">
     <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div>{data.action && <button className="primary-action" disabled title="数据库与服务端接口接通后启用">{data.action}</button>}</div>
     <div className="table-toolbar"><div className="search-field"><span>⌕</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`搜索${data.title}`} /></div><select value={status} onChange={e => setStatus(e.target.value)}><option value="all">全部状态</option><option value="active">正常 / 已启用</option><option value="pending">待处理</option><option value="disabled">已停用</option></select><button className="filter-reset" onClick={() => {setSearch('');setStatus('all');}}>重置筛选</button></div>
-    <section className="workspace-card table-card"><div className="table-scroll"><table><thead><tr>{data.columns.map(col => <th key={col}>{col}</th>)}</tr></thead><tbody><tr><td colSpan={data.columns.length}><div className="empty-state"><div className="empty-symbol">{modules.find(m => m.key === moduleKey).code}</div><h3>{data.empty}</h3><p>{data.note}</p><span>数据库尚未连接，当前没有真实记录</span></div></td></tr></tbody></table></div></section>
+    <section className="workspace-card table-card"><div className="table-scroll"><table><thead><tr>{data.columns.map(col => <th key={col}>{col}</th>)}</tr></thead><tbody>{loading ? <tr><td colSpan={data.columns.length}><div className="empty-state"><h3>正在读取真实数据…</h3></div></td></tr> : filteredItems.length ? filteredItems.map((item, index) => <tr key={item.id || item.order_no || index}>{(fields[moduleKey] || []).map((field, i) => <td key={field + i}>{cellValue(item[field], field)}</td>)}</tr>) : <tr><td colSpan={data.columns.length}><div className="empty-state"><div className="empty-symbol">{modules.find(m => m.key === moduleKey).code}</div><h3>{data.empty}</h3><p>{data.note}</p><span>{endpoints[moduleKey] ? '当前没有真实记录或接口暂不可用' : '该模块接口尚未接入'}</span></div></td></tr>}</tbody></table></div></section>
     <div className="module-footnote">筛选控件和列表结构已建立；新增、编辑、删除及状态变更将在对应 API 和权限校验完成后开放。</div>
   </div>;
 }
