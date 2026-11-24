@@ -40,7 +40,7 @@ const moduleData = {
   api: { title: 'API 接口管理', eyebrow: 'API ACCESS', action: '创建 API 凭证', columns: ['凭证名称', '所属网站', 'Key 前缀', '权限范围', '最近调用', '有效期', '状态', '操作'], empty: '暂无 API 凭证', note: '每个业务网站使用独立 API 凭证。密钥只在创建时展示一次，数据库只保存 SHA-256 摘要；支持轮换、吊销和调用审计。' },
   orders: { title: '订单管理', eyebrow: 'ORDERS', action: '', columns: ['订单编号', '所属网站', '商品 / 订单标题', '订单金额', '买家信息', '订单状态', '创建时间'], empty: '暂无订单记录', note: '订单数据将按站点隔离展示。支付成功状态以服务端验签和渠道查询结果为准。' },
   payments: { title: '支付记录', eyebrow: 'PAYMENT TRANSACTIONS', action: '', columns: ['支付流水号', '订单编号', '所属网站', '支付渠道', '支付金额', '支付状态', '支付时间'], empty: '暂无支付流水', note: '当前仅支持支付宝 JSAPI。付款链接需在支付宝客户端中打开，由 AlipayJSBridge 唤起收银台。服务端订单创建、OAuth 跳转、trade.create、通知验签和交付流程已通过隔离测试；真实客户端唤起仍待容器验收。' },
-  refunds: { title: '退款管理', eyebrow: 'REFUNDS', action: '', columns: ['退款单号', '原订单号', '所属网站', '退款金额', '退款原因', '退款状态', '申请时间', '操作'], empty: '暂无退款申请', note: '退款状态将与支付宝渠道结果同步，保留每次操作记录和管理员审计信息。' },
+  refunds: { title: '退款管理', eyebrow: 'REFUNDS', action: '发起退款', columns: ['退款单号', '原订单号', '所属网站', '退款金额', '退款原因', '退款状态', '申请时间', '操作'], empty: '暂无退款申请', note: '退款状态将与支付宝渠道结果同步，保留每次操作记录和管理员审计信息。' },
   delivery: { title: '交付管理', eyebrow: 'FULFILLMENT', action: '', columns: ['交付编号', '订单编号', '所属网站', '交付方式', '尝试次数', '交付状态', '最近执行时间', '操作'], empty: '暂无交付任务', note: 'Webhook 交付支持失败重试；人工和内部交付支持确认完成，所有操作保留审计记录。' },
   admins: { title: '管理员管理', eyebrow: 'ADMINISTRATION', action: '添加管理员', columns: ['管理员账号', '角色', '受保护状态', '账号状态', '最近登录', '创建时间', '操作'], empty: '管理员数据尚未初始化', note: '三个指定邮箱已在生产数据库初始化为受保护的超级管理员。可在此管理其他管理员、角色授权、账号启停和登录记录。密码只保存安全哈希，不写入代码或明文数据库字段。' },
   revenue: { title: '收款统计', eyebrow: 'REVENUE ANALYTICS', action: '', columns: ['统计日期', '所属网站', '订单总数', '支付成功', '收款金额', '退款金额', '净收款'], empty: '暂无收款统计', note: '统计数据以真实支付记录为基础，支持按网站和日期汇总，不展示模拟金额。' },
@@ -125,7 +125,8 @@ function DataModule({ moduleKey, admin }) {
   const [createdKey, setCreatedKey] = useState('');
   const [createdDeliverySecret, setCreatedDeliverySecret] = useState('');
   const [siteOptions, setSiteOptions] = useState([]);
-  const [form, setForm] = useState({ name:'', slug:'', base_url:'', delivery_mode:'manual', delivery_url:'', site_id:'', amount:'', description:'', delivery_rule:'', label:'', email:'', password:'', role:'operator' });
+  const [orderOptions, setOrderOptions] = useState([]);
+  const [form, setForm] = useState({ name:'', slug:'', base_url:'', delivery_mode:'manual', delivery_url:'', site_id:'', amount:'', description:'', delivery_rule:'', label:'', email:'', password:'', role:'operator', order_id:'', reason:'' });
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [passwordNotice, setPasswordNotice] = useState('');
@@ -162,6 +163,19 @@ function DataModule({ moduleKey, admin }) {
   useEffect(() => {
     if (!['products','api'].includes(moduleKey)) return;
     apiFetch('/api/sites', { credentials:'include' }).then(r => r.json()).then(data => setSiteOptions(data.items || [])).catch(() => setSiteOptions([]));
+  }, [moduleKey]);
+  useEffect(() => {
+    if (moduleKey !== 'refunds') return;
+    Promise.all([
+      apiFetch('/api/orders', { credentials:'include' }).then(r => r.json()),
+      apiFetch('/api/refunds', { credentials:'include' }).then(r => r.json()),
+    ]).then(([ordersData, refundsData]) => {
+      const reserved = new Map();
+      for (const item of refundsData.items || []) {
+        if (['pending','processing','succeeded'].includes(item.status)) reserved.set(item.order_id, (reserved.get(item.order_id) || 0) + Number(item.amount_minor || 0));
+      }
+      setOrderOptions((ordersData.items || []).filter(item => item.status === 'paid').map(item => ({ ...item, remaining_minor: Math.max(0, Number(item.amount_minor || 0) - (reserved.get(item.id) || 0)) })).filter(item => item.remaining_minor > 0));
+    }).catch(() => setOrderOptions([]));
   }, [moduleKey]);
   async function runRowAction(item) {
     try {
@@ -219,6 +233,9 @@ function DataModule({ moduleKey, admin }) {
       } else if (moduleKey === 'admins') {
         endpoint = '/api/admins';
         payload = { email:form.email, password:form.password, role:form.role };
+      } else if (moduleKey === 'refunds') {
+        endpoint = '/api/refunds';
+        payload = { order_id:form.order_id, amount_minor:Math.round(Number(form.amount) * 100), reason:form.reason || null };
       }
       if (!endpoint) throw new Error('此模块暂不支持创建');
       const response = await apiFetch(endpoint, { method:'POST', headers:{'content-type':'application/json'}, credentials:'include', body:JSON.stringify(payload) });
@@ -227,7 +244,7 @@ function DataModule({ moduleKey, admin }) {
       if (moduleKey === 'api') setCreatedKey(data.api_key || '');
       if (moduleKey === 'sites' && data.delivery_secret) setCreatedDeliverySecret(data.delivery_secret);
       setShowCreate(false);
-      setForm({ name:'', slug:'', base_url:'', delivery_mode:'manual', delivery_url:'', site_id:'', amount:'', description:'', delivery_rule:'', label:'', email:'', password:'', role:'operator' });
+      setForm({ name:'', slug:'', base_url:'', delivery_mode:'manual', delivery_url:'', site_id:'', amount:'', description:'', delivery_rule:'', label:'', email:'', password:'', role:'operator', order_id:'', reason:'' });
       const refreshed = await apiFetch(endpoints[moduleKey], { credentials:'include' });
       const result = await refreshed.json().catch(() => ({}));
       setItems(result.items || []);
@@ -277,7 +294,7 @@ function DataModule({ moduleKey, admin }) {
     </div>
   </div>;
   return <div className="workspace-page">
-    <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div>{data.action && ['sites','products','api','admins'].includes(moduleKey) && admin?.role !== 'viewer' && <button className="primary-action" onClick={() => { setFormError(''); setShowCreate(true); }}>{data.action}</button>}</div>
+    <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div>{data.action && ['sites','products','api','admins','refunds'].includes(moduleKey) && admin?.role !== 'viewer' && <button className="primary-action" onClick={() => { setFormError(''); setShowCreate(true); }}>{data.action}</button>}</div>
     {createdKey && <section className="workspace-card create-panel"><b>新 API Key（仅显示一次，请立即保存）</b><code>{createdKey}</code><button className="filter-reset" onClick={() => setCreatedKey('')}>我已保存</button></section>}
     {createdDeliverySecret && <section className="workspace-card create-panel"><b>站点 Webhook 签名密钥（请保存到对应业务网站）</b><code>{createdDeliverySecret}</code><button className="filter-reset" onClick={() => setCreatedDeliverySecret('')}>我已保存</button></section>}
     {showCreate && <section className="workspace-card create-panel"><div className="card-heading"><h2>{data.action}</h2><button className="filter-reset" type="button" onClick={() => setShowCreate(false)}>取消</button></div><form onSubmit={submitCreate} className="create-form">
@@ -285,6 +302,7 @@ function DataModule({ moduleKey, admin }) {
       {moduleKey === 'products' && <><label>所属网站<select required value={form.site_id} onChange={e=>setForm({...form,site_id:e.target.value})}><option value="">请选择网站</option>{siteOptions.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><label>商品名称<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} /></label><label>价格（人民币元）<input required type="number" min="0.01" step="0.01" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} /></label><label>商品说明<textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})} /></label><label>交付规则 JSON（可选）<textarea value={form.delivery_rule} onChange={e=>setForm({...form,delivery_rule:e.target.value})} placeholder='{"type":"license"}' /></label></>}
       {moduleKey === 'api' && <><label>所属网站<select required value={form.site_id} onChange={e=>setForm({...form,site_id:e.target.value})}><option value="">请选择网站</option>{siteOptions.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><label>凭证名称<input value={form.label} onChange={e=>setForm({...form,label:e.target.value})} /></label></>}
       {moduleKey === 'admins' && <><label>管理员邮箱<input required type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} /></label><label>初始密码（至少 12 位）<input required type="password" minLength={12} value={form.password} onChange={e=>setForm({...form,password:e.target.value})} /></label><label>角色<select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}><option value="operator">运营管理员</option><option value="viewer">只读管理员</option></select></label></>}
+      {moduleKey === 'refunds' && <><p className="notice">发起后将调用支付宝官方退款接口，请先核对订单和退款金额。待处理及成功退款会占用可退额度。</p><label>已支付订单<select required value={form.order_id} onChange={e=>setForm({...form,order_id:e.target.value,amount:''})}><option value="">请选择订单</option>{orderOptions.map(o=><option key={o.id} value={o.id}>{o.order_no} · ¥{(o.amount_minor/100).toFixed(2)}（剩余可退 ¥{(o.remaining_minor/100).toFixed(2)}）</option>)}</select></label><label>退款金额（人民币元）<input required type="number" min="0.01" step="0.01" max={orderOptions.find(o=>o.id===form.order_id)?.remaining_minor / 100 || undefined} value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} /></label><label>退款原因<input value={form.reason} onChange={e=>setForm({...form,reason:e.target.value})} maxLength={120} /></label></>}
       {formError && <p className="notice">{formError}</p>}<button className="submit-button" type="submit" disabled={saving}>{saving ? '正在保存…' : '确认创建'}</button>
     </form></section>}
     <div className="table-toolbar"><div className="search-field"><span>⌕</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`搜索${data.title}`} /></div><select value={status} onChange={e => setStatus(e.target.value)}><option value="all">全部状态</option><option value="active">正常 / 已启用</option><option value="pending">待处理</option><option value="disabled">已停用</option></select><button className="filter-reset" onClick={() => {setSearch('');setStatus('all');}}>重置筛选</button></div>
