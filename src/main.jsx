@@ -39,10 +39,10 @@ const moduleData = {
   products: { title: '商品管理', eyebrow: 'PRODUCT CATALOG', action: '添加商品', columns: ['商品名称', '所属网站', '商品价格', '币种', '交付方式', '状态', '更新时间'], empty: '暂无商品', note: '商品必须归属于一个业务网站。商品价格以人民币分为单位存储，避免浮点金额误差。' },
   api: { title: 'API 接口管理', eyebrow: 'API ACCESS', action: '创建 API 凭证', columns: ['凭证名称', '所属网站', 'Key 前缀', '权限范围', '最近调用', '有效期', '状态', '操作'], empty: '暂无 API 凭证', note: '每个业务网站使用独立 API 凭证。密钥只在创建时展示一次，数据库只保存 SHA-256 摘要；支持轮换、吊销和调用审计。' },
   orders: { title: '订单管理', eyebrow: 'ORDERS', action: '', columns: ['订单编号', '所属网站', '商品 / 订单标题', '订单金额', '买家信息', '订单状态', '创建时间'], empty: '暂无订单记录', note: '订单数据将按站点隔离展示。支付成功状态以服务端验签和渠道查询结果为准。' },
-  payments: { title: '支付记录', eyebrow: 'PAYMENT TRANSACTIONS', action: '', columns: ['支付流水号', '订单编号', '所属网站', '支付渠道', '支付金额', '支付状态', '支付时间'], empty: '暂无支付流水', note: '当前仅按支付宝 JSAPI 方向开发。普通浏览器不能直接调用支付宝 JSAPI；须先确认支付宝小程序或其他受支持的 JSAPI 容器。真实支付、通知与退款仍待端到端验收。' },
+  payments: { title: '支付记录', eyebrow: 'PAYMENT TRANSACTIONS', action: '', columns: ['支付流水号', '订单编号', '所属网站', '支付渠道', '支付金额', '支付状态', '支付时间'], empty: '暂无支付流水', note: '当前仅支持支付宝 JSAPI。付款链接需在支付宝客户端中打开，由 AlipayJSBridge 唤起收银台。服务端订单创建、OAuth 跳转、trade.create、通知验签和交付流程已通过隔离测试；真实客户端唤起仍待容器验收。' },
   refunds: { title: '退款管理', eyebrow: 'REFUNDS', action: '', columns: ['退款单号', '原订单号', '所属网站', '退款金额', '退款原因', '退款状态', '申请时间', '操作'], empty: '暂无退款申请', note: '退款状态将与支付宝渠道结果同步，保留每次操作记录和管理员审计信息。' },
   delivery: { title: '交付管理', eyebrow: 'FULFILLMENT', action: '', columns: ['交付编号', '订单编号', '所属网站', '交付方式', '尝试次数', '交付状态', '最近执行时间', '操作'], empty: '暂无交付任务', note: 'Webhook 交付支持失败重试；人工和内部交付支持确认完成，所有操作保留审计记录。' },
-  admins: { title: '管理员管理', eyebrow: 'ADMINISTRATION', action: '添加管理员', columns: ['管理员账号', '角色', '受保护状态', '账号状态', '最近登录', '创建时间', '操作'], empty: '管理员数据尚未初始化', note: '三个指定邮箱将作为受保护的超级管理员。可在此管理其他管理员、角色授权、账号启停和登录记录。密码只保存安全哈希，不写入代码或明文数据库字段。' },
+  admins: { title: '管理员管理', eyebrow: 'ADMINISTRATION', action: '添加管理员', columns: ['管理员账号', '角色', '受保护状态', '账号状态', '最近登录', '创建时间', '操作'], empty: '管理员数据尚未初始化', note: '三个指定邮箱已在生产数据库初始化为受保护的超级管理员。可在此管理其他管理员、角色授权、账号启停和登录记录。密码只保存安全哈希，不写入代码或明文数据库字段。' },
   revenue: { title: '收款统计', eyebrow: 'REVENUE ANALYTICS', action: '', columns: ['统计日期', '所属网站', '订单总数', '支付成功', '收款金额', '退款金额', '净收款'], empty: '暂无收款统计', note: '统计数据以真实支付记录为基础，支持按网站和日期汇总，不展示模拟金额。' },
   ledger: { title: '资金流水', eyebrow: 'FINANCIAL LEDGER', action: '', columns: ['流水编号', '所属网站', '关联订单', '流水类型', '发生金额', '渠道交易号', '发生时间'], empty: '暂无资金流水', note: '收款和退款流水分别记录，保留渠道交易号与关联订单，便于核对追踪。' },
   security: { title: '安全设置', eyebrow: 'SECURITY CENTER', action: '', columns: [], empty: '', note: '' },
@@ -100,8 +100,8 @@ function Overview({ onNavigate }) {
       <section className="workspace-card"><div className="card-heading"><div><span className="section-kicker">SYSTEM STATUS</span><h2>系统接入进度</h2></div><span className="soft-tag">生产服务</span></div>
         <div className="status-list">
           <div className="status-row"><span className="status-mark pending">01</span><div><b>独立数据库</b><small>服务器独立 SQLite 数据库已初始化，API 健康检查通过</small></div><em>已连接</em></div>
-          <div className="status-row"><span className="status-mark pending">02</span><div><b>管理员认证</b><small>登录、会话和密码哈希接口已部署，等待首次超管初始化</small></div><em>待初始化</em></div>
-          <div className="status-row"><span className="status-mark pending">03</span><div><b>支付宝 JSAPI 支付</b><small>服务端已加入 JSAPI 交易创建接口；普通浏览器不能直接调起，须确认可用的支付宝 JSAPI 容器。尚未完成真实付款验收</small></div><em>待容器确认</em></div>
+          <div className="status-row"><span className="status-mark pending">02</span><div><b>管理员认证</b><small>三个受保护超级管理员已在生产数据库初始化，登录、会话和密码哈希接口已部署</small></div><em>已初始化</em></div>
+          <div className="status-row"><span className="status-mark pending">03</span><div><b>支付宝 JSAPI 支付</b><small>服务端 JSAPI OAuth、交易创建和付款启动流程已通过隔离测试；需在支付宝客户端容器中完成最终唤起验收</small></div><em>待容器验收</em></div>
           <div className="status-row"><span className="status-mark pending">04</span><div><b>多网站数据隔离</b><small>站点 API Key、订单隔离和 Webhook 交付接口已建立，待接入业务网站</small></div><em>待接入业务</em></div>
         </div>
       </section>
@@ -270,7 +270,7 @@ function DataModule({ moduleKey, admin }) {
   if (moduleKey === 'settings') return <div className="workspace-page">
     <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div></div>
     <div className="settings-grid">
-      <section className="workspace-card settings-card"><span className="section-kicker">PAYMENT CHANNEL</span><h2>支付渠道</h2><p>AppID：{health?.alipay?.app_id ? '已配置' : '未配置'}；应用私钥：{health?.alipay?.private_key ? '已配置' : '未配置'}；支付宝公钥：{health?.alipay?.public_key ? '已配置' : '未配置'}；商户 PID：{health?.alipay?.seller_id ? '已配置' : '未配置'}。异步通知地址：{health?.alipay?.notify_url || '未配置'}。密钥保存在服务器受限目录。</p><div className="setting-bottom"><span className="soft-tag">{health?.alipay?.seller_id ? '服务器参数已配置，待支付宝产品权限验收' : '缺少商户 PID'}</span><span>支付宝</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">PAYMENT CHANNEL</span><h2>支付渠道</h2><p>AppID：{health?.alipay?.app_id ? '已配置' : '未配置'}；应用私钥：{health?.alipay?.private_key ? '已配置' : '未配置'}；支付宝公钥：{health?.alipay?.public_key ? '已配置' : '未配置'}；商户 PID：{health?.alipay?.seller_id ? '已配置' : '未配置'}。异步通知地址：{health?.alipay?.notify_url || '未配置'}。密钥保存在服务器受限目录。</p><div className="setting-bottom"><span className="soft-tag">{health?.alipay?.seller_id ? '官方接口签名验证已通过，待支付宝客户端唤起验收' : '缺少商户 PID'}</span><span>支付宝</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">SECURITY</span><h2>安全策略</h2><p>登录限流、安全会话、管理员权限保护、API 凭证哈希和操作审计。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>访问控制</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">DATA ISOLATION</span><h2>数据隔离</h2><p>每笔业务数据绑定站点上下文。服务端从 API 凭证解析站点身份，不信任客户端传入的站点标识。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>站点隔离</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">AUDIT LOG</span><h2>操作审计</h2><p>记录管理员、操作类型、目标资源、执行结果和时间，拒绝与失败操作同样留痕。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>审计记录</span></div></section>
