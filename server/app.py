@@ -259,9 +259,13 @@ async def create_site(req:FRequest):
         except Exception: c.close(); raise HTTPException(400,"invalid_delivery_url")
     sid=uid()
     c.execute("INSERT INTO business_sites(id,name,slug,base_url,delivery_mode,delivery_config_json) VALUES(?,?,?,?,?,?)",(sid,name,slug,b.get("base_url"),mode,json.dumps(cfg)))
-    audit(c,a["id"],"site.create","site",slug); c.commit()
+    # Every business site is provisioned with its own API credential at creation.
+    # The raw key is returned once; only its SHA-256 digest is stored.
+    raw_key="qt_live_"+secrets.token_urlsafe(32); kid=uid()
+    c.execute("INSERT INTO site_api_keys(id,site_id,label,key_prefix,secret_hash) VALUES(?,?,?,?,?)",(kid,sid,"default",raw_key[:15],digest(raw_key)))
+    audit(c,a["id"],"site.create","site",slug); audit(c,a["id"],"api_key.create","api_key",kid); c.commit()
     secret=site_delivery_secret(sid) if mode=="webhook" else None
-    c.close(); return {"ok":True,"site_id":sid,"delivery_secret":secret}
+    c.close(); return {"ok":True,"site_id":sid,"api_key":raw_key,"delivery_secret":secret}
 @app.get("/api/products")
 def products(req:FRequest):
     c=db(); need_admin(req,c); x=rows(c.execute("SELECT p.*,s.name site_name,json_extract(p.delivery_rule_json,'$.mode') delivery_mode FROM products p JOIN business_sites s ON s.id=p.site_id ORDER BY p.created_at DESC")); c.close(); return {"items":x}
