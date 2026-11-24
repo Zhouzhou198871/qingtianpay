@@ -1,4 +1,5 @@
 import os, re, json, time, uuid, hmac, hashlib, secrets, sqlite3, base64, socket, ipaddress
+from decimal import Decimal, InvalidOperation
 from urllib.parse import urlencode, parse_qs
 from urllib.request import Request, build_opener, HTTPHandler, HTTPRedirectHandler
 from urllib.error import URLError
@@ -302,6 +303,7 @@ async def create_payment(req:FRequest):
         c.close(); raise HTTPException(503,"alipay_merchant_id_not_configured")
     product=c.execute("SELECT * FROM products WHERE id=? AND site_id=? AND status='active'",(b.get("product_id"),k["site_id"])).fetchone()
     if not product: c.close(); raise HTTPException(404,"product_not_found")
+    if product["currency"] != "CNY": c.close(); raise HTTPException(400,"alipay_only_supports_cny")
     ext=str(b.get("external_order_no","")).strip()
     method=str(b.get("payment_method","alipay_jsapi")).strip().lower()
     if method not in ("alipay_jsapi","alipay_qr"):
@@ -335,8 +337,10 @@ async def create_payment(req:FRequest):
 async def alipay_notify(req:FRequest):
     form=await req.form(); p={k:str(v) for k,v in form.items()}
     if not verify_alipay(p): return Response("failure",status_code=400,media_type="text/plain")
-    c=db(); o=c.execute("SELECT o.*,p.id payment_id,p.amount_minor payment_amount FROM orders o JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND p.channel='alipay'",(p.get("out_trade_no"),)).fetchone()
-    if not ALIPAY_SELLER_ID or not o or p.get("seller_id")!=ALIPAY_SELLER_ID or p.get("auth_app_id",APP_ID)!=APP_ID or o["payment_amount"]!=round(float(p.get("total_amount","0"))*100) or not p.get("trade_no") or not p.get("notify_id"): c.close(); return Response("failure",status_code=400,media_type="text/plain")
+    c=db(); o=c.execute("SELECT o.*,p.id payment_id,p.amount_minor payment_amount,p.channel_out_trade_no FROM orders o JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND p.channel='alipay'",(p.get("out_trade_no"),)).fetchone()
+    try: notified_amount=int((Decimal(str(p.get("total_amount","0")))*100).quantize(Decimal("1")))
+    except (InvalidOperation, ValueError, TypeError): notified_amount=-1
+    if not ALIPAY_SELLER_ID or not o or p.get("seller_id")!=ALIPAY_SELLER_ID or o["channel_out_trade_no"]!=p.get("out_trade_no") or o["payment_amount"]!=notified_amount or o["amount_minor"]!=notified_amount or not p.get("trade_no") or not p.get("notify_id"): c.close(); return Response("failure",status_code=400,media_type="text/plain")
     if p.get("trade_status") in ("TRADE_SUCCESS","TRADE_FINISHED"):
         c.execute("UPDATE payments SET status='succeeded',channel_trade_no=?,notified_at=CURRENT_TIMESTAMP,paid_at=COALESCE(paid_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=? AND status!='succeeded'",(p.get("trade_no"),o["payment_id"]))
         c.execute("UPDATE orders SET status='paid',paid_at=COALESCE(paid_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('pending','failed')",(o["id"],)); c.commit(); deliver(c,o["id"])
@@ -350,7 +354,7 @@ def site_order(order_no:str,req:FRequest):
     if o["status"] in ("pending","failed") and ALIPAY_SELLER_ID:
         try:
             result=alipay("alipay.trade.query",{"out_trade_no":order_no})
-            paid_amount=round(float(result.get("total_amount","0"))*100)
+            paid_amount=int((Decimal(str(result.get("total_amount","0")))*100).quantize(Decimal("1")))
             if result.get("seller_id")==ALIPAY_SELLER_ID and paid_amount==o["amount_minor"] and result.get("trade_status") in ("TRADE_SUCCESS","TRADE_FINISHED"):
                 c.execute("UPDATE payments SET status='succeeded',channel_trade_no=?,paid_at=COALESCE(paid_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=? AND status!='succeeded'",(result.get("trade_no"),o["payment_id"]))
                 c.execute("UPDATE orders SET status='paid',paid_at=COALESCE(paid_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('pending','failed')",(o["id"],))
