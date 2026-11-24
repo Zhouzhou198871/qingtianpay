@@ -5,7 +5,7 @@ import './style.css';
 function Brand({ compact = false }) {
   return (
     <div className={compact ? 'brand brand-compact' : 'brand'}>
-      <img src="/logo.png" alt="晴天支付中心" />
+      <img src={`${import.meta.env.BASE_URL}logo.png`} alt="晴天支付中心" />
       <div className="brand-copy">
         <strong>晴天支付中心</strong>
         <span>QINGTIAN PAYMENT</span>
