@@ -85,6 +85,7 @@ function DataModule({ moduleKey, admin }) {
   const [currentPassword, setCurrentPassword] = useState('');
   const [newPassword, setNewPassword] = useState('');
   const [passwordNotice, setPasswordNotice] = useState('');
+  const [health, setHealth] = useState(null);
   const endpoints = { sites: '/api/sites', products: '/api/products', api: '/api/api-keys', orders: '/api/orders', payments: '/api/payments', refunds: '/api/refunds', delivery: '/api/deliveries', admins: '/api/admins', logs: '/api/audit-logs', revenue: '/api/analytics/revenue', ledger: '/api/ledger' };
   const fields = {
     sites: ['name','slug','base_url','key_prefix','status','created_at'],
@@ -111,6 +112,9 @@ function DataModule({ moduleKey, admin }) {
     }).then(rows => { if (alive) setItems(rows); }).catch(() => { if (alive) setItems([]); }).finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [moduleKey]);
+  useEffect(() => {
+    fetch('/api/health', { credentials:'include' }).then(r=>r.json()).then(setHealth).catch(()=>setHealth(null));
+  }, []);
   useEffect(() => {
     if (!['products','api'].includes(moduleKey)) return;
     fetch('/api/sites', { credentials:'include' }).then(r => r.json()).then(data => setSiteOptions(data.items || [])).catch(() => setSiteOptions([]));
@@ -181,8 +185,8 @@ function DataModule({ moduleKey, admin }) {
   if (moduleKey === 'security') return <div className="workspace-page">
     <div className="page-intro"><div><div className="page-eyebrow">SECURITY CENTER</div><h1>安全设置</h1><p>统一管理后台身份验证、会话和访问保护。</p></div></div>
     <div className="settings-grid">
-      <section className="workspace-card settings-card"><span className="section-kicker">LOGIN PROTECTION</span><h2>登录保护</h2><p>登录失败限流、异常尝试锁定、管理员登录验证和安全告警。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>身份验证</span></div></section>
-      <section className="workspace-card settings-card"><span className="section-kicker">SESSION POLICY</span><h2>会话策略</h2><p>安全 Cookie、会话有效期、闲置超时和远程撤销会话。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>会话管理</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">LOGIN PROTECTION</span><h2>登录保护</h2><p>登录失败限流、异常尝试锁定、管理员登录验证和安全告警。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>身份验证</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">SESSION POLICY</span><h2>会话策略</h2><p>安全 Cookie、会话有效期、闲置超时和远程撤销会话。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>会话管理</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">API CREDENTIALS</span><h2>接口凭证安全</h2><p>API 密钥仅展示一次，数据库只保存摘要，支持轮换与吊销。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>密钥保护</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">SECURITY EVENTS</span><h2>安全事件</h2><p>登录失败、权限拒绝、凭证轮换和敏感配置变更统一记录。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>安全审计</span></div></section>
     </div>
@@ -190,10 +194,10 @@ function DataModule({ moduleKey, admin }) {
   if (moduleKey === 'settings') return <div className="workspace-page">
     <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div></div>
     <div className="settings-grid">
-      <section className="workspace-card settings-card"><span className="section-kicker">PAYMENT CHANNEL</span><h2>支付渠道</h2><p>首期统一接入支付宝官方支付。应用 ID、私钥、支付宝公钥和证书等敏感配置仅保存在 Cloudflare Secrets。</p><div className="setting-bottom"><span className="soft-tag">尚未配置</span><span>支付宝</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">PAYMENT CHANNEL</span><h2>支付渠道</h2><p>AppID：{health?.alipay?.app_id ? '已配置' : '未配置'}；应用私钥：{health?.alipay?.private_key ? '已配置' : '未配置'}；支付宝公钥：{health?.alipay?.public_key ? '已配置' : '未配置'}。私钥和公钥只保存在 Cloudflare Worker Secrets。</p><div className="setting-bottom"><span className="soft-tag">{health?.alipay?.private_key && health?.alipay?.public_key ? '密钥已配置' : '待配置密钥'}</span><span>支付宝</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">SECURITY</span><h2>安全策略</h2><p>登录限流、安全会话、管理员权限保护、API 凭证哈希和操作审计。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>访问控制</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">DATA ISOLATION</span><h2>数据隔离</h2><p>每笔业务数据绑定站点上下文。服务端从 API 凭证解析站点身份，不信任客户端传入的站点标识。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>站点隔离</span></div></section>
-      <section className="workspace-card settings-card"><span className="section-kicker">AUDIT LOG</span><h2>操作审计</h2><p>记录管理员、操作类型、目标资源、执行结果和时间，拒绝与失败操作同样留痕。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>审计记录</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">AUDIT LOG</span><h2>操作审计</h2><p>记录管理员、操作类型、目标资源、执行结果和时间，拒绝与失败操作同样留痕。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>审计记录</span></div></section>
     </div>
   </div>;
   return <div className="workspace-page">
