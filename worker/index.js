@@ -161,7 +161,9 @@ async function runDelivery(db, env, orderId) {
     await db.prepare("UPDATE delivery_records SET status='failed',last_error='delivery_webhook_not_configured',attempt_count=attempt_count+1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(task.id).run();
     return;
   }
-  const payload = JSON.stringify({ event: "order.paid", order_no: order.order_no, external_order_no: order.external_order_no, site_id: order.site_id, product_id: order.product_id, product_name: order.product_name, amount_minor: order.amount_minor, currency: order.currency, buyer_ref: order.buyer_ref, paid_at: order.paid_at, idempotency_key: idempotencyKey });
+  let deliveryRule = null;
+  try { deliveryRule = order.delivery_rule_json ? JSON.parse(order.delivery_rule_json) : null; } catch {}
+  const payload = JSON.stringify({ event: "order.paid", order_no: order.order_no, external_order_no: order.external_order_no, site_id: order.site_id, product_id: order.product_id, product_name: order.product_name, delivery_rule: deliveryRule, amount_minor: order.amount_minor, currency: order.currency, buyer_ref: order.buyer_ref, paid_at: order.paid_at, idempotency_key: idempotencyKey });
   const signature = await signDelivery(env.DELIVERY_SIGNING_SECRET, payload);
   const claim = await db.prepare("UPDATE delivery_records SET status='processing',attempt_count=attempt_count+1,request_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('pending','failed')").bind(payload, task.id).run();
   if (!claim.meta?.changes) return;
@@ -419,7 +421,7 @@ async function handle(request, env) {
     if (!order || Number(order.payment_amount) !== Math.round(Number(params.total_amount) * 100) || params.app_id !== env.ALIPAY_APP_ID) return new Response("failure", { status: 400, headers: { "content-type": "text/plain" } });
     if (params.trade_status === "TRADE_SUCCESS" || params.trade_status === "TRADE_FINISHED") {
       await env.DB.prepare("UPDATE payments SET status='succeeded',channel_trade_no=?,notified_at=CURRENT_TIMESTAMP,paid_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status!='succeeded'").bind(params.trade_no || null, order.payment_id).run();
-      await env.DB.prepare("UPDATE orders SET status='paid',paid_at=COALESCE(paid_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=? AND status!='paid'").bind(order.id).run();
+      await env.DB.prepare("UPDATE orders SET status='paid',paid_at=COALESCE(paid_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(order.id).run();
       await runDelivery(env.DB, env, order.id);
     } else if (params.trade_status === "TRADE_CLOSED") {
       await env.DB.prepare("UPDATE payments SET status='closed',notified_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status!='succeeded'").bind(order.payment_id).run();
@@ -457,7 +459,8 @@ async function handle(request, env) {
     try {
       const result = await alipayRequest(env, "alipay.trade.refund", { out_trade_no: order.order_no, refund_amount: amountText(amount), out_request_no: refundNo, refund_reason: String(payload?.reason || "商户退款").slice(0,256) });
       await env.DB.prepare("UPDATE refunds SET status='succeeded',channel_refund_no=?,processed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(result.trade_no || result.out_trade_no || null, refundId).run();
-      if (amount === order.amount_minor) await env.DB.prepare("UPDATE orders SET status='refunded',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(order.id).run();
+      const totalRefunded = await env.DB.prepare("SELECT COALESCE(SUM(amount_minor),0) AS total FROM refunds WHERE order_id=? AND status='succeeded'").bind(order.id).first();
+      if (Number(totalRefunded?.total || 0) >= order.amount_minor) await env.DB.prepare("UPDATE orders SET status='refunded',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(order.id).run();
       await audit(env.DB, admin.id, "refund.create", "refunds", refundId);
       return json({ id: refundId, refund_no: refundNo, status: "succeeded", result });
     } catch (error) {
