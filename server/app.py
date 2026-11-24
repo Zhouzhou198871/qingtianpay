@@ -313,10 +313,14 @@ async def create_payment(req:FRequest):
     if not product: c.close(); raise HTTPException(404,"product_not_found")
     if product["currency"] != "CNY": c.close(); raise HTTPException(400,"alipay_only_supports_cny")
     ext=str(b.get("external_order_no","")).strip()
-    method=str(b.get("payment_method","alipay_page")).strip().lower()
-    if method not in ("alipay_page","alipay_wap"):
-        c.close(); raise HTTPException(400,"unsupported_payment_method")
+    # This merchant is provisioned for Alipay JSAPI only. Do not silently
+    # fall back to website-pay products that may not be enabled.
+    method=str(b.get("payment_method","alipay_jsapi")).strip().lower()
+    if method != "alipay_jsapi":
+        c.close(); raise HTTPException(400,"unsupported_payment_method_jsapi_only")
     buyer=str(b.get("buyer_id","")).strip()
+    if not buyer:
+        c.close(); raise HTTPException(400,"alipay_buyer_id_required")
     if not ext:
         c.close(); raise HTTPException(400,"external_order_no_required")
     old=c.execute("SELECT order_no,status FROM orders WHERE site_id=? AND external_order_no=?",(k["site_id"],ext)).fetchone()
@@ -330,16 +334,19 @@ async def create_payment(req:FRequest):
         base=(site["base_url"] or "https://pay.lynli.me").rstrip("/")
         if not base.startswith("https://"): raise RuntimeError("merchant_base_url_https_required")
         return_url=base+"/payment/result?order_no="+order_no
-        if method=="alipay_page":
-            result={"method":"alipay.trade.page.pay"}
-            biz={"out_trade_no":order_no,"total_amount":amount,"subject":product["name"],"product_code":"FAST_INSTANT_TRADE_PAY","timeout_express":"15m"}
-            payment_url=alipay_page_url("alipay.trade.page.pay",biz,return_url)
-        else:
-            result={"method":"alipay.trade.wap.pay"}
-            biz={"out_trade_no":order_no,"total_amount":amount,"subject":product["name"],"product_code":"QUICK_WAP_WAY","timeout_express":"15m","quit_url":return_url}
-            payment_url=alipay_page_url("alipay.trade.wap.pay",biz,return_url)
-        response={"order_no":order_no,"status":"pending","payment_method":method,"payment_url":payment_url}
-        c.execute("UPDATE payments SET status='created',channel_response_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",(json.dumps(result),pid)); c.commit()
+        result=alipay("alipay.trade.create",{
+            "out_trade_no":order_no,
+            "total_amount":amount,
+            "subject":product["name"],
+            "buyer_id":buyer,
+            "product_code":"JSAPI_PAY",
+            "timeout_express":"15m"
+        })
+        if str(result.get("code","")) != "10000" or not result.get("trade_no"):
+            raise RuntimeError("alipay_jsapi_create_rejected")
+        trade_no=str(result["trade_no"])
+        response={"order_no":order_no,"status":"pending","payment_method":"alipay_jsapi","invoke":{"tradeNO":trade_no}}
+        c.execute("UPDATE payments SET status='created',channel_trade_no=?,channel_response_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",(trade_no,json.dumps({"method":"alipay.trade.create","trade_no":trade_no}),pid)); c.commit()
         c.close(); return response
     except Exception as e:
         c.execute("UPDATE payments SET status='failed',channel_response_json=? WHERE id=?",(json.dumps({"error":str(e)}),pid)); c.execute("UPDATE orders SET status='failed' WHERE id=?",(oid,)); c.commit(); c.close(); raise HTTPException(502,"alipay_create_failed")
