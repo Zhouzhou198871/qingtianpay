@@ -334,7 +334,7 @@ function App() {
     try {
       const response = await apiFetch('/api/auth/bootstrap', { method: 'POST', headers: { 'content-type': 'application/json', 'X-Bootstrap-Secret': setupSecret }, credentials: 'include', body: JSON.stringify({ password: initialPassword }) });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error === 'forbidden' ? '初始化密钥不正确，请检查 Cloudflare Secret。' : '初始化失败：' + (data.error || response.status));
+      if (!response.ok) throw new Error(data.error === 'forbidden' ? '初始化密钥不正确，请检查服务器初始化密钥。' : '初始化失败：' + (data.error || response.status));
       setSetupRequired(false); setSetupSecret(''); setInitialPassword(''); setConfirmPassword('');
       setNotice('超级管理员初始化成功，请使用管理员邮箱和新密码登录。');
     } catch (error) { setNotice(error.message || '初始化失败，请稍后重试。'); }
