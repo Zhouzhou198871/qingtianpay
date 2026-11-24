@@ -19,14 +19,13 @@ Content-Type: application/json
   "product_id": "管理面板中创建的商品 ID",
   "external_order_no": "业务网站自己的唯一订单号",
   "payment_method": "alipay_jsapi",
-  "buyer_id": "通过支付宝授权流程取得的当前用户 user_id",
   "buyer_ref": "业务网站内部用户标识",
   "buyer_email": "可选的买家邮箱",
   "metadata": { "source": "website" }
 }
 ```
 
-商品价格从支付中心商品目录读取，客户端不能传入或覆盖应收金额。`external_order_no` 在同一站点内必须唯一。`buyer_id` 是支付宝 JSAPI 所需的买家 user_id，不是业务网站内部用户 ID。
+商品价格从支付中心商品目录读取，客户端不能传入或覆盖应收金额。`external_order_no` 在同一站点内必须唯一。买家身份由支付中心在用户使用支付宝扫码后，通过支付宝 OAuth auth_base 授权流程取得，不需要业务网站传入 buyer_id。
 
 成功响应示例：
 
@@ -35,11 +34,13 @@ Content-Type: application/json
   "order_no": "QT...",
   "status": "pending",
   "payment_method": "alipay_jsapi",
-  "invoke": { "tradeNO": "支付宝创建的交易号" }
+  "checkout_url": "https://pay-api.lynli.me/api/checkout/<一次性令牌>",
+  "qr_image_url": "https://pay-api.lynli.me/api/qr?...",
+  "expires_in": 900
 }
 ```
 
-支付中心只调用 `alipay.trade.create` 创建 JSAPI 交易，并返回 `invoke.tradeNO`；业务网站前端必须运行在支付宝支持的 JSAPI 容器内，通过支付宝 JSAPI 的 `tradePay` 能力调起支付。业务网站须先完成支付宝用户授权并取得当前用户的 `user_id`，将其从业务网站服务端传给支付中心；不能把业务网站自己的用户 ID 当作 `buyer_id`。当前接口拒绝 `alipay_page` 和 `alipay_wap`，不会回退到手机网站支付或电脑网站支付。只有服务端验签通过的异步通知，或通过签名验证的支付宝交易查询，才能把订单标记为已支付。
+支付中心为每笔订单创建 15 分钟有效的一次性 checkout token，并返回订单专属二维码。付款人必须使用支付宝 App 扫描二维码；支付中心将其导向支付宝 auth_base 授权，服务端通过 alipay.system.oauth.token 换取真实 user_id，随后调用 alipay.trade.create 创建 JSAPI 交易，并跳转到支付页面调用 AlipayJSBridge 的 tradePay（传入 tradeNO）。普通浏览器没有支付宝 JSAPI Bridge，不能直接完成该支付流程。当前接口拒绝 alipay_page 和 alipay_wap，不会回退到手机网站支付或电脑网站支付。只有服务端验签通过的异步通知，或通过签名验证的支付宝交易查询，才能把订单标记为已支付。
 
 ## 查询订单
 
