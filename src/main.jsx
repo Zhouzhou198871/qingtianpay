@@ -333,7 +333,6 @@ function PaymentLaunch() {
     }, 1800);
     return () => { done = true; window.clearTimeout(fallback); document.removeEventListener('AlipayJSBridgeReady', launch); };
   }, [tradeNO, orderNo]);
-  if (window.location.pathname === '/payment/launch') return <PaymentLaunch />;
   return <main className="page-shell"><section className="login-panel" style={{minHeight:'100vh',justifyContent:'center'}}><div className="login-card"><div className="login-heading"><div className="welcome-tag">QINGTIAN PAYMENT</div><h2>支付宝订单付款</h2><p>订单号：{orderNo || '—'}</p></div><p className="notice" role="status">{state}</p>{!started && <p className="secure-note">请确认通过支付宝扫一扫打开此付款二维码。</p>}</div></section></main>;
 }
 
@@ -406,4 +405,5 @@ function App() {
   </main>;
 }
 
-createRoot(document.getElementById('root')).render(<App />);
+const Root = window.location.pathname === '/payment/launch' ? PaymentLaunch : App;
+createRoot(document.getElementById('root')).render(<Root />);
