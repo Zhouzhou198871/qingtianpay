@@ -318,6 +318,61 @@ async function handle(request, env) {
     return json({ items: rows.results || [] });
   }
 
+
+  if (path === "/api/api-keys" && method === "GET") {
+    const rows = await env.DB.prepare("SELECT k.id,k.site_id,s.name AS site_name,k.label,k.key_prefix,k.status,k.last_used_at,k.expires_at,k.created_at FROM site_api_keys k JOIN business_sites s ON s.id=k.site_id ORDER BY k.created_at DESC LIMIT 300").all();
+    return json({ items: rows.results || [] });
+  }
+  if (path.startsWith("/api/api-keys/") && path.endsWith("/revoke") && method === "POST") {
+    const id = path.split("/")[3];
+    const result = await env.DB.prepare("UPDATE site_api_keys SET status='revoked' WHERE id=? AND status='active'").bind(id).run();
+    if (!result.meta?.changes) return json({ error: "api_key_not_found_or_revoked" }, 404);
+    await audit(env.DB, admin.id, "site.api_key.revoke", "site_api_keys", id);
+    return json({ ok: true });
+  }
+  if (path === "/api/admins" && method === "POST") {
+    if (admin.role !== "superadmin") return json({ error: "forbidden" }, 403);
+    const payload = await body(request);
+    const email = String(payload?.email || "").trim().toLowerCase();
+    const password = String(payload?.password || "");
+    const role = ["operator","viewer"].includes(payload?.role) ? payload.role : "operator";
+    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length < 12 || password.length > 256) return json({ error: "invalid_admin" }, 400);
+    if (SUPERADMINS.has(email)) return json({ error: "protected_superadmin_email" }, 409);
+    const id = randomId(16);
+    try {
+      await env.DB.prepare("INSERT INTO admin_accounts(id,email,password_hash,role,status,is_protected) VALUES(?,?,?,?, 'active',0)").bind(id,email,await passwordHash(password),role).run();
+      await audit(env.DB, admin.id, "admin.create", "admin_accounts", id);
+      return json({ id,email,role,status:"active" }, 201);
+    } catch { return json({ error: "admin_already_exists_or_database_error" }, 409); }
+  }
+  if (path.startsWith("/api/admins/") && method === "PATCH") {
+    if (admin.role !== "superadmin") return json({ error: "forbidden" }, 403);
+    const id = path.split("/")[3];
+    const target = await env.DB.prepare("SELECT id,email,is_protected FROM admin_accounts WHERE id=?").bind(id).first();
+    if (!target) return json({ error: "admin_not_found" }, 404);
+    if (target.is_protected) return json({ error: "protected_superadmin_cannot_be_modified" }, 403);
+    const payload = await body(request);
+    const role = ["operator","viewer"].includes(payload?.role) ? payload.role : null;
+    const status = ["active","disabled"].includes(payload?.status) ? payload.status : null;
+    if (!role && !status) return json({ error: "no_valid_changes" }, 400);
+    await env.DB.prepare("UPDATE admin_accounts SET role=COALESCE(?,role),status=COALESCE(?,status),updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(role,status,id).run();
+    if (status === "disabled") await env.DB.prepare("DELETE FROM admin_sessions WHERE admin_id=?").bind(id).run();
+    await audit(env.DB, admin.id, "admin.update", "admin_accounts", id, "success", { role, status });
+    return json({ ok: true, id, role, status });
+  }
+  if (path === "/api/auth/change-password" && method === "POST") {
+    const payload = await body(request);
+    const current = String(payload?.current_password || "");
+    const next = String(payload?.new_password || "");
+    const record = await env.DB.prepare("SELECT password_hash FROM admin_accounts WHERE id=?").bind(admin.id).first();
+    if (!await verifyPassword(current, record?.password_hash)) return json({ error: "current_password_incorrect" }, 400);
+    if (next.length < 12 || next.length > 256) return json({ error: "new_password_must_be_12_to_256_chars" }, 400);
+    await env.DB.prepare("UPDATE admin_accounts SET password_hash=?,password_changed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(await passwordHash(next),admin.id).run();
+    await env.DB.prepare("DELETE FROM admin_sessions WHERE admin_id=? AND id!=?").bind(admin.id,admin.session_id).run();
+    await audit(env.DB, admin.id, "auth.password_change", "admin_accounts", admin.id);
+    return json({ ok: true });
+  }
+
   if (path === "/api/admins" && method === "GET") {
     const rows = await env.DB.prepare("SELECT id,email,role,status,is_protected,last_login_at,created_at FROM admin_accounts ORDER BY is_protected DESC,created_at").all();
     return json({ items: rows.results || [] });
