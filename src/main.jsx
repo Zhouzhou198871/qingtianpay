@@ -152,7 +152,7 @@ function DataModule({ moduleKey, admin }) {
     setLoading(true);
     apiFetch(endpoint, { credentials: 'include' }).then(async response => {
       const payload = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(payload.error || '接口读取失败');
+      if (!response.ok) throw new Error(payload.error || payload.detail || '接口读取失败');
       return payload.items || [];
     }).then(rows => { if (alive) setItems(rows); }).catch(() => { if (alive) setItems([]); }).finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
@@ -200,7 +200,7 @@ function DataModule({ moduleKey, admin }) {
       } else return;
       const response = await apiFetch(url, { method, headers:{'content-type':'application/json'}, credentials:'include', ...(method === 'GET' ? {} : { body:JSON.stringify(payload) }) });
       const result = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(result.error || '操作失败');
+      if (!response.ok) throw new Error(result.error || result.detail || '操作失败');
       if (moduleKey === 'sites') { setCreatedDeliverySecret(result.delivery_secret || ''); return; }
       const refreshed = await apiFetch(endpoints[moduleKey], { credentials:'include' });
       const data = await refreshed.json().catch(() => ({}));
@@ -213,7 +213,7 @@ function DataModule({ moduleKey, admin }) {
     try {
       const response = await apiFetch('/api/auth/change-password', { method:'POST', headers:{'content-type':'application/json'}, credentials:'include', body:JSON.stringify({ current_password:currentPassword, new_password:newPassword }) });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error === 'current_password_incorrect' ? '当前密码不正确。' : (data.error || '密码修改失败'));
+      if (!response.ok) throw new Error(data.error === 'current_password_incorrect' || data.detail === 'current_password_incorrect' ? '当前密码不正确。' : (data.error || data.detail || '密码修改失败'));
       setCurrentPassword(''); setNewPassword(''); setPasswordNotice('密码已更新，其他登录会话已退出。');
     } catch (error) { setPasswordNotice(error.message || '密码修改失败'); }
   }
@@ -240,7 +240,7 @@ function DataModule({ moduleKey, admin }) {
       if (!endpoint) throw new Error('此模块暂不支持创建');
       const response = await apiFetch(endpoint, { method:'POST', headers:{'content-type':'application/json'}, credentials:'include', body:JSON.stringify(payload) });
       const data = await response.json().catch(() => ({}));
-      if (!response.ok) throw new Error(data.error || '创建失败');
+      if (!response.ok) throw new Error(data.error || data.detail || '创建失败');
       if (moduleKey === 'api') setCreatedKey(data.api_key || '');
       if (moduleKey === 'sites' && data.delivery_secret) setCreatedDeliverySecret(data.delivery_secret);
       setShowCreate(false);
@@ -355,9 +355,9 @@ function PaymentLaunch() {
 }
 
 function App() {
-  const [account, setAccount] = useState('');
+  const [account, setAccount] = useState(() => { try { return window.localStorage.getItem('qt_admin_account') || ''; } catch { return ''; } });
   const [password, setPassword] = useState('');
-  const [remember, setRemember] = useState(true);
+  const [remember, setRemember] = useState(() => { try { return window.localStorage.getItem('qt_remember_account') !== 'false'; } catch { return true; } });
   const [workspace, setWorkspace] = useState(false);
   const [admin, setAdmin] = useState(null);
   const [busy, setBusy] = useState(false);
@@ -403,6 +403,11 @@ function App() {
       });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error === 'too_many_attempts' ? '登录尝试过多，请稍后再试。' : '账号或密码不正确，或账号尚未初始化。');
+      if (remember) {
+        try { window.localStorage.setItem('qt_admin_account', account); window.localStorage.setItem('qt_remember_account', 'true'); } catch {}
+      } else {
+        try { window.localStorage.removeItem('qt_admin_account'); window.localStorage.setItem('qt_remember_account', 'false'); } catch {}
+      }
       setAdmin(data.admin); setPassword(''); setWorkspace(true);
     } catch (error) {
       setNotice(error.message || '登录服务暂时不可用，请稍后重试。');
