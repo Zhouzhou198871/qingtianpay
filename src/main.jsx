@@ -76,7 +76,7 @@ function DataModule({ moduleKey }) {
   const [status, setStatus] = useState('all');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const endpoints = { sites: '/api/sites', products: '/api/products', orders: '/api/orders', payments: '/api/payments', refunds: '/api/refunds', delivery: '/api/deliveries', admins: '/api/admins', logs: '/api/audit-logs' };
+  const endpoints = { sites: '/api/sites', products: '/api/products', orders: '/api/orders', payments: '/api/payments', refunds: '/api/refunds', delivery: '/api/deliveries', admins: '/api/admins', logs: '/api/audit-logs', revenue: '/api/analytics/revenue', ledger: '/api/ledger' };
   const fields = {
     sites: ['name','slug','base_url','key_prefix','status','created_at'],
     products: ['name','site_name','amount_minor','currency','delivery_mode','status','updated_at'],
@@ -85,7 +85,7 @@ function DataModule({ moduleKey }) {
     refunds: ['refund_no','order_no','site_name','amount_minor','reason','status','created_at'],
     delivery: ['id','order_no','site_name','mode','attempt_count','status','updated_at'],
     admins: ['email','email','role','is_protected','status','last_login_at','created_at'],
-    logs: ['created_at','actor_email','action','resource_type','resource_id','result'],
+    logs: ['created_at','actor_email','action','resource_type','resource_id','result'],\n    revenue: ['date','site_name','order_count','paid_count','gross_minor','refund_minor','net_minor'],\n    ledger: ['id','site_name','order_no','type','amount_minor','channel_trade_no','created_at'],
   };
   useEffect(() => {
     let alive = true;
@@ -106,7 +106,7 @@ function DataModule({ moduleKey }) {
   });
   function cellValue(value, field) {
     if (value === null || value === undefined || value === '') return '—';
-    if (field === 'amount_minor') return '¥' + (Number(value) / 100).toFixed(2);
+    if (['amount_minor','gross_minor','refund_minor','net_minor'].includes(field)) return '¥' + (Number(value) / 100).toFixed(2);
     if (field === 'is_protected') return value ? '受保护' : '普通管理员';
     if (field === 'status') return ({ active: '正常', disabled: '停用', pending: '待处理', paid: '已支付', succeeded: '成功', failed: '失败', processing: '处理中', refunded: '已退款', closed: '已关闭' })[value] || value;
     if (field.endsWith('_at')) return String(value).replace('T',' ').replace('Z','').slice(0,19);
