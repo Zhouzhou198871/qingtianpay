@@ -51,15 +51,15 @@ function Overview({ onNavigate }) {
     ['接入业务', '—', '等待站点数据接入', 'sites'],
   ];
   return <div className="workspace-page">
-    <div className="page-intro"><div><div className="page-eyebrow">OVERVIEW</div><h1>业务总览</h1><p>晴天旗下业务的统一支付管理入口。</p></div><div className="data-state"><i /> 数据接口待接入</div></div>
+    <div className="page-intro"><div><div className="page-eyebrow">OVERVIEW</div><h1>业务总览</h1><p>晴天旗下业务的统一支付管理入口。</p></div><div className="data-state"><i /> 后端已连接</div></div>
     <div className="overview-grid">{cards.map(([label,value,hint,target]) => <button className="metric-card" key={label} onClick={() => onNavigate(target)}><span>{label}</span><strong>{value}</strong><small>{hint}</small></button>)}</div>
     <div className="overview-columns">
       <section className="workspace-card"><div className="card-heading"><div><span className="section-kicker">SYSTEM STATUS</span><h2>系统接入进度</h2></div><span className="soft-tag">开发中</span></div>
         <div className="status-list">
-          <div className="status-row"><span className="status-mark pending">01</span><div><b>独立数据库</b><small>数据表结构已定义，尚未创建生产数据库</small></div><em>待接入</em></div>
-          <div className="status-row"><span className="status-mark pending">02</span><div><b>管理员认证</b><small>待开发安全登录、会话和权限校验</small></div><em>待接入</em></div>
-          <div className="status-row"><span className="status-mark pending">03</span><div><b>支付宝官方支付</b><small>待配置应用参数、签名验签与通知处理</small></div><em>待接入</em></div>
-          <div className="status-row"><span className="status-mark pending">04</span><div><b>多网站数据隔离</b><small>按站点标识隔离商品、订单、退款与交付</small></div><em>待接入</em></div>
+          <div className="status-row"><span className="status-mark pending">01</span><div><b>独立数据库</b><small>新建 D1 已创建并完成两份迁移，Worker 健康检查通过</small></div><em>已连接</em></div>
+          <div className="status-row"><span className="status-mark pending">02</span><div><b>管理员认证</b><small>登录、会话和密码哈希接口已部署，等待首次超管初始化</small></div><em>待初始化</em></div>
+          <div className="status-row"><span className="status-mark pending">03</span><div><b>支付宝 JSAPI</b><small>下单、异步通知验签和退款接口已部署，密钥配置与真实联调待完成</small></div><em>待联调</em></div>
+          <div className="status-row"><span className="status-mark pending">04</span><div><b>多网站数据隔离</b><small>站点 API Key、订单隔离和 Webhook 交付接口已建立，待接入业务网站</small></div><em>待接入业务</em></div>
         </div>
       </section>
       <section className="workspace-card"><div className="card-heading"><div><span className="section-kicker">WORKSPACE</span><h2>管理模块</h2></div></div>
