@@ -271,7 +271,7 @@ async function handle(request, env) {
   }
 
   if (path === "/api/sites" && method === "GET") {
-    const rows = await env.DB.prepare("SELECT id,name,slug,base_url,status,delivery_mode,created_at,updated_at FROM business_sites ORDER BY created_at DESC").all();
+    const rows = await env.DB.prepare("SELECT s.id,s.name,s.slug,s.base_url,s.status,s.delivery_mode,s.created_at,s.updated_at,(SELECT k.key_prefix FROM site_api_keys k WHERE k.site_id=s.id AND k.status='active' ORDER BY k.created_at DESC LIMIT 1) AS key_prefix FROM business_sites s ORDER BY s.created_at DESC").all();
     return json({ items: rows.results || [] });
   }
   if (path === "/api/sites" && method === "POST") {
@@ -296,7 +296,7 @@ async function handle(request, env) {
   }
 
   if (path === "/api/products" && method === "GET") {
-    const rows = await env.DB.prepare("SELECT p.id,p.site_id,s.name AS site_name,p.name,p.description,p.amount_minor,p.currency,p.status,p.delivery_rule_json,p.created_at,p.updated_at FROM products p JOIN business_sites s ON s.id=p.site_id ORDER BY p.created_at DESC").all();
+    const rows = await env.DB.prepare("SELECT p.id,p.site_id,s.name AS site_name,p.name,p.description,p.amount_minor,p.currency,p.status,p.delivery_rule_json,json_extract(p.delivery_rule_json,'$.mode') AS delivery_mode,p.created_at,p.updated_at FROM products p JOIN business_sites s ON s.id=p.site_id ORDER BY p.created_at DESC").all();
     return json({ items: rows.results || [] });
   }
   if (path === "/api/products" && method === "POST") {
