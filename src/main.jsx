@@ -1,4 +1,4 @@
-import React, { useMemo, useState } from 'react';
+import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
@@ -109,12 +109,12 @@ function DataModule({ moduleKey }) {
   </div>;
 }
 
-function Dashboard({ onExit }) {
+function Dashboard({ onExit, admin }) {
   const [active, setActive] = useState('overview');
   const current = modules.find(m => m.key === active) || modules[0];
   const groups = ['工作台', '业务管理', '交易中心', '财务中心', '系统管理', '账户中心'];
   return <main className="dashboard">
-    <aside className="dash-sidebar"><Brand /><div className="sidebar-divider" /><div className="sidebar-groups">{groups.map(group => <div className="sidebar-group" key={group}><div className="dash-caption">{group}</div>{modules.filter(m => m.group === group).map(item => <button key={item.key} className={active === item.key ? 'dash-nav active' : 'dash-nav'} onClick={() => setActive(item.key)}><span className="nav-code">{item.code}</span>{item.label}</button>)}</div>)}</div><div className="sidebar-bottom"><div className="admin-chip"><span className="admin-avatar">管</span><div><b>管理员工作区</b><small>认证服务接入后显示账号</small></div></div><button className="dash-exit" onClick={onExit}>返回登录页</button></div></aside>
+    <aside className="dash-sidebar"><Brand /><div className="sidebar-divider" /><div className="sidebar-groups">{groups.map(group => <div className="sidebar-group" key={group}><div className="dash-caption">{group}</div>{modules.filter(m => m.group === group).map(item => <button key={item.key} className={active === item.key ? 'dash-nav active' : 'dash-nav'} onClick={() => setActive(item.key)}><span className="nav-code">{item.code}</span>{item.label}</button>)}</div>)}</div><div className="sidebar-bottom"><div className="admin-chip"><span className="admin-avatar">管</span><div><b>{admin?.email || "管理员工作区"}</b><small>{admin?.role === "superadmin" ? "超级管理员" : "管理员"}</small></div></div><button className="dash-exit" onClick={onExit}>返回登录页</button></div></aside>
     <section className="dash-main"><header className="dash-top"><div className="breadcrumb"><span>晴天支付中心</span><i>/</i><b>{current.label}</b></div><div className="top-right"><span className="environment-tag">开发环境</span><button className="account-menu" onClick={() => setActive('profile')} aria-label="打开个人中心"><span className="top-logo">管</span><span>个人中心</span></button></div></header>
       {active === 'overview' ? <Overview onNavigate={setActive} /> : <DataModule key={active} moduleKey={active} />}
     </section>
@@ -125,7 +125,7 @@ function App() {
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
-  const [workspace, setWorkspace] = useState(() => new URLSearchParams(window.location.search).get('workspace') === 'preview');
+  const [workspace, setWorkspace] = useState(false);\n  const [admin, setAdmin] = useState(null);\n  const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
   if (workspace) return <Dashboard onExit={() => setWorkspace(false)} />;
   function handleSubmit(event) { event.preventDefault(); setNotice('登录认证服务尚未启用，请勿在此输入正式账户密码。'); }
@@ -138,7 +138,7 @@ function App() {
     </section>
     <section className="login-panel"><div className="mobile-brand"><Brand compact /></div><div className="login-card">
       <div className="login-heading"><div className="welcome-tag">WELCOME BACK</div><h2>欢迎回来</h2><p>登录你的晴天支付中心账户</p></div>
-      <form onSubmit={handleSubmit}><label htmlFor="account">账号</label><div className="input-wrap"><span className="input-symbol">◎</span><input id="account" name="account" type="email" autoComplete="username" placeholder="请输入管理员邮箱" value={account} onChange={e => setAccount(e.target.value)} required /></div><div className="label-row"><label htmlFor="password">登录密码</label></div><div className="input-wrap"><span className="input-symbol">⌑</span><input id="password" name="password" type="password" autoComplete="current-password" placeholder="请输入登录密码" value={password} onChange={e => setPassword(e.target.value)} required /></div><div className="form-options"><label className="remember"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} /><span className="checkmark" />记住账号</label><span className="secure-note"><span>●</span> 安全登录</span></div><button className="submit-button" type="submit">登录管理中心</button>{notice && <div className="notice" role="status">{notice}</div>}</form>
+      <form onSubmit={handleSubmit}><label htmlFor="account">账号</label><div className="input-wrap"><span className="input-symbol">◎</span><input id="account" name="account" type="email" autoComplete="username" placeholder="请输入管理员邮箱" value={account} onChange={e => setAccount(e.target.value)} required /></div><div className="label-row"><label htmlFor="password">登录密码</label></div><div className="input-wrap"><span className="input-symbol">⌑</span><input id="password" name="password" type="password" autoComplete="current-password" placeholder="请输入登录密码" value={password} onChange={e => setPassword(e.target.value)} required /></div><div className="form-options"><label className="remember"><input type="checkbox" checked={remember} onChange={e => setRemember(e.target.checked)} /><span className="checkmark" />记住账号</label><span className="secure-note"><span>●</span> 安全登录</span></div><button className="submit-button" type="submit" disabled={busy}>{busy ? "正在验证…" : "登录管理中心"}</button>{notice && <div className="notice" role="status">{notice}</div>}</form>
       <div className="login-divider"><span>PRIVATE ACCESS</span></div><div className="access-note"><span className="lock">⌑</span><p>此系统仅供晴天自有业务管理使用<br /><b>仅限授权管理员访问</b></p></div>
     </div><footer className="login-footer"><span>© {new Date().getFullYear()} 晴天支付中心</span><span>专属管理 · 安全可靠</span></footer></section>
   </main>;
