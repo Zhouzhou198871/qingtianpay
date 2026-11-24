@@ -1,9 +1,10 @@
-import os, re, json, time, uuid, hmac, hashlib, secrets, sqlite3, base64, socket, ipaddress
+import os, re, json, time, uuid, hmac, hashlib, secrets, sqlite3, base64, socket, ipaddress, io
 from decimal import Decimal, InvalidOperation
-from urllib.parse import urlencode, parse_qs
+from urllib.parse import urlencode, parse_qs, urlsplit
 from urllib.request import Request, build_opener, HTTPHandler, HTTPRedirectHandler
 from urllib.error import URLError
 from fastapi import FastAPI, Request as FRequest, Response, HTTPException
+import qrcode
 from fastapi.middleware.cors import CORSMiddleware
 from cryptography.hazmat.primitives import hashes, serialization
 from cryptography.hazmat.primitives.asymmetric import padding
@@ -156,6 +157,24 @@ def deliver(c,order_id):
 
 @app.on_event("startup")
 def startup(): init_db()
+
+@app.get("/api/qr")
+def payment_qr(url: str):
+    # Generate a real QR image for a first-party Alipay JSAPI payment launch URL.
+    if not url or len(url) > 2048:
+        raise HTTPException(400, "invalid_qr_url")
+    parsed = urlsplit(url)
+    if parsed.scheme != "https" or parsed.hostname != "pay.lynli.me" or parsed.username or parsed.password:
+        raise HTTPException(400, "qr_url_must_be_first_party_https")
+    if parsed.path != "/payment/launch":
+        raise HTTPException(400, "qr_url_must_be_payment_launch")
+    qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=4)
+    qr.add_data(url)
+    qr.make(fit=True)
+    image = qr.make_image(fill_color="black", back_color="white")
+    output = io.BytesIO()
+    image.save(output, format="PNG")
+    return Response(content=output.getvalue(), media_type="image/png", headers={"Cache-Control":"no-store", "X-Content-Type-Options":"nosniff"})
 
 @app.get("/api/health")
 def health():
