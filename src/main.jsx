@@ -99,9 +99,9 @@ function Overview({ onNavigate }) {
     <div className="overview-columns">
       <section className="workspace-card"><div className="card-heading"><div><span className="section-kicker">SYSTEM STATUS</span><h2>系统接入进度</h2></div><span className="soft-tag">开发中</span></div>
         <div className="status-list">
-          <div className="status-row"><span className="status-mark pending">01</span><div><b>独立数据库</b><small>新建 D1 已创建并完成两份迁移，服务器 API 健康检查通过</small></div><em>已连接</em></div>
+          <div className="status-row"><span className="status-mark pending">01</span><div><b>独立数据库</b><small>服务器独立 SQLite 数据库已初始化，API 健康检查通过</small></div><em>已连接</em></div>
           <div className="status-row"><span className="status-mark pending">02</span><div><b>管理员认证</b><small>登录、会话和密码哈希接口已部署，等待首次超管初始化</small></div><em>待初始化</em></div>
-          <div className="status-row"><span className="status-mark pending">03</span><div><b>支付宝 JSAPI</b><small>下单、异步通知验签和退款接口已部署，真实支付联调待完成</small></div><em>待联调</em></div>
+          <div className="status-row"><span className="status-mark pending">03</span><div><b>支付宝 JSAPI</b><small>AppID 与密钥已配置；商户 PID 尚未配置，真实收款验收未完成</small></div><em>待联调</em></div>
           <div className="status-row"><span className="status-mark pending">04</span><div><b>多网站数据隔离</b><small>站点 API Key、订单隔离和 Webhook 交付接口已建立，待接入业务网站</small></div><em>待接入业务</em></div>
         </div>
       </section>
@@ -259,7 +259,7 @@ function DataModule({ moduleKey, admin }) {
   if (moduleKey === 'settings') return <div className="workspace-page">
     <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div></div>
     <div className="settings-grid">
-      <section className="workspace-card settings-card"><span className="section-kicker">PAYMENT CHANNEL</span><h2>支付渠道</h2><p>AppID：{health?.alipay?.app_id ? '已配置' : '未配置'}；应用私钥：{health?.alipay?.private_key ? '已配置' : '未配置'}；支付宝公钥：{health?.alipay?.public_key ? '已配置' : '未配置'}。应用私钥和支付宝公钥保存在服务器受限目录，由独立支付 API 读取。</p><div className="setting-bottom"><span className="soft-tag">{health?.alipay?.private_key && health?.alipay?.public_key ? '密钥已配置' : '待配置密钥'}</span><span>支付宝</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">PAYMENT CHANNEL</span><h2>支付渠道</h2><p>AppID：{health?.alipay?.app_id ? '已配置' : '未配置'}；应用私钥：{health?.alipay?.private_key ? '已配置' : '未配置'}；支付宝公钥：{health?.alipay?.public_key ? '已配置' : '未配置'}；商户 PID：{health?.alipay?.seller_id ? '已配置' : '未配置'}。异步通知地址：{health?.alipay?.notify_url || '未配置'}。密钥保存在服务器受限目录。</p><div className="setting-bottom"><span className="soft-tag">{health?.alipay?.seller_id ? '渠道参数齐备，待真实联调' : '缺少商户 PID'}</span><span>支付宝</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">SECURITY</span><h2>安全策略</h2><p>登录限流、安全会话、管理员权限保护、API 凭证哈希和操作审计。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>访问控制</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">DATA ISOLATION</span><h2>数据隔离</h2><p>每笔业务数据绑定站点上下文。服务端从 API 凭证解析站点身份，不信任客户端传入的站点标识。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>站点隔离</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">AUDIT LOG</span><h2>操作审计</h2><p>记录管理员、操作类型、目标资源、执行结果和时间，拒绝与失败操作同样留痕。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>审计记录</span></div></section>
