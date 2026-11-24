@@ -446,6 +446,20 @@ async def alipay_notify(req:FRequest):
     elif p.get("trade_status")=="TRADE_CLOSED":
         c.execute("UPDATE payments SET status='closed',notified_at=CURRENT_TIMESTAMP WHERE id=? AND status!='succeeded'",(o["payment_id"],)); c.execute("UPDATE orders SET status='closed' WHERE id=? AND status='pending'",(o["id"],))
     c.commit(); c.close(); return Response("success",media_type="text/plain")
+@app.get("/api/payment-status")
+def public_payment_status(order_no:str, trade_no:str):
+    # Public checkout status: require both the merchant order number and
+    # Alipay trade number; return no customer or merchant configuration data.
+    c=db()
+    o=c.execute("""SELECT o.status order_status,p.status payment_status,p.channel_trade_no
+                   FROM orders o JOIN payments p ON p.order_id=o.id
+                   WHERE o.order_no=? AND p.channel='alipay' AND p.channel_trade_no=?""",
+                (order_no,trade_no)).fetchone()
+    c.close()
+    if not o: raise HTTPException(404,"payment_not_found")
+    status="paid" if o["order_status"]=="paid" and o["payment_status"]=="succeeded" else o["order_status"]
+    return {"order_no":order_no,"status":status}
+
 @app.get("/api/v1/orders/{order_no}")
 def site_order(order_no:str,req:FRequest):
     c=db(); k=site_key(req,c); o=c.execute("SELECT o.*,p.id payment_id,p.status payment_status,p.channel_trade_no FROM orders o JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND o.site_id=?",(order_no,k["site_id"])).fetchone()
