@@ -44,14 +44,50 @@ const moduleData = {
 };
 
 function Overview({ onNavigate }) {
+  const [metrics, setMetrics] = useState({ orders: 0, revenue: 0, refunds: 0, sites: 0 });
+  const [health, setHealth] = useState(null);
+  const [loadingMetrics, setLoadingMetrics] = useState(true);
+  useEffect(() => {
+    let alive = true;
+    const load = async () => {
+      try {
+        const [ordersRes, paymentsRes, refundsRes, sitesRes, healthRes] = await Promise.all([
+          fetch('/api/orders', { credentials:'include' }),
+          fetch('/api/payments', { credentials:'include' }),
+          fetch('/api/refunds', { credentials:'include' }),
+          fetch('/api/sites', { credentials:'include' }),
+          fetch('/api/health', { credentials:'include' }),
+        ]);
+        const [ordersData, paymentsData, refundsData, sitesData, healthData] = await Promise.all([
+          ordersRes.json(), paymentsRes.json(), refundsRes.json(), sitesRes.json(), healthRes.json(),
+        ]);
+        if (!ordersRes.ok || !paymentsRes.ok || !refundsRes.ok || !sitesRes.ok) throw new Error('dashboard_api_failed');
+        const today = new Date().toLocaleDateString('en-CA');
+        const todayOrders = (ordersData.items || []).filter(x => String(x.created_at || '').slice(0,10) === today);
+        const todayRevenue = (paymentsData.items || []).filter(x => x.status === 'succeeded' && String(x.paid_at || '').slice(0,10) === today)
+          .reduce((sum, x) => sum + Number(x.amount_minor || 0), 0);
+        const pendingRefunds = (refundsData.items || []).filter(x => ['processing','pending'].includes(x.status)).length;
+        if (alive) {
+          setMetrics({ orders: todayOrders.length, revenue: todayRevenue, refunds: pendingRefunds, sites: (sitesData.items || []).length });
+          setHealth(healthData);
+        }
+      } catch {
+        if (alive) setHealth(null);
+      } finally {
+        if (alive) setLoadingMetrics(false);
+      }
+    };
+    load();
+    return () => { alive = false; };
+  }, []);
   const cards = [
-    ['今日订单', '—', '等待订单数据接入', 'orders'],
-    ['今日收款', '¥ —', '等待支付数据接入', 'payments'],
-    ['待处理退款', '—', '等待退款数据接入', 'refunds'],
-    ['接入业务', '—', '等待站点数据接入', 'sites'],
+    ['今日订单', loadingMetrics ? '…' : String(metrics.orders), '今日新建订单', 'orders'],
+    ['今日收款', loadingMetrics ? '¥ …' : '¥ ' + (metrics.revenue / 100).toFixed(2), '今日已成功收款', 'payments'],
+    ['待处理退款', loadingMetrics ? '…' : String(metrics.refunds), '等待渠道处理', 'refunds'],
+    ['接入业务', loadingMetrics ? '…' : String(metrics.sites), '已登记业务网站', 'sites'],
   ];
   return <div className="workspace-page">
-    <div className="page-intro"><div><div className="page-eyebrow">OVERVIEW</div><h1>业务总览</h1><p>晴天旗下业务的统一支付管理入口。</p></div><div className="data-state"><i /> 后端已连接</div></div>
+    <div className="page-intro"><div><div className="page-eyebrow">OVERVIEW</div><h1>业务总览</h1><p>晴天旗下业务的统一支付管理入口。</p></div><div className="data-state"><i /> {health?.ok ? '服务正常' : '服务状态待确认'}</div></div>
     <div className="overview-grid">{cards.map(([label,value,hint,target]) => <button className="metric-card" key={label} onClick={() => onNavigate(target)}><span>{label}</span><strong>{value}</strong><small>{hint}</small></button>)}</div>
     <div className="overview-columns">
       <section className="workspace-card"><div className="card-heading"><div><span className="section-kicker">SYSTEM STATUS</span><h2>系统接入进度</h2></div><span className="soft-tag">开发中</span></div>
@@ -223,7 +259,7 @@ function DataModule({ moduleKey, admin }) {
     </div>
   </div>;
   return <div className="workspace-page">
-    <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div>{data.action && ['sites','products','api','admins'].includes(moduleKey) && <button className="primary-action" onClick={() => { setFormError(''); setShowCreate(true); }}>{data.action}</button>}</div>
+    <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div>{data.action && ['sites','products','api','admins'].includes(moduleKey) && admin?.role !== 'viewer' && <button className="primary-action" onClick={() => { setFormError(''); setShowCreate(true); }}>{data.action}</button>}</div>
     {createdKey && <section className="workspace-card create-panel"><b>新 API Key（仅显示一次，请立即保存）</b><code>{createdKey}</code><button className="filter-reset" onClick={() => setCreatedKey('')}>我已保存</button></section>}
     {showCreate && <section className="workspace-card create-panel"><div className="card-heading"><h2>{data.action}</h2><button className="filter-reset" type="button" onClick={() => setShowCreate(false)}>取消</button></div><form onSubmit={submitCreate} className="create-form">
       {moduleKey === 'sites' && <><label>网站名称<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} /></label><label>站点标识（小写字母、数字、短横线）<input required value={form.slug} onChange={e=>setForm({...form,slug:e.target.value})} /></label><label>网站地址<input type="url" value={form.base_url} onChange={e=>setForm({...form,base_url:e.target.value})} placeholder="https://example.com" /></label><label>交付模式<select value={form.delivery_mode} onChange={e=>setForm({...form,delivery_mode:e.target.value})}><option value="manual">人工交付</option><option value="webhook">Webhook 自动交付</option><option value="internal">内部交付</option></select></label>{form.delivery_mode === 'webhook' && <label>HTTPS 交付接口<input required type="url" value={form.delivery_url} onChange={e=>setForm({...form,delivery_url:e.target.value})} placeholder="https://example.com/api/delivery" /></label>}</>}
@@ -233,7 +269,7 @@ function DataModule({ moduleKey, admin }) {
       {formError && <p className="notice">{formError}</p>}<button className="submit-button" type="submit" disabled={saving}>{saving ? '正在保存…' : '确认创建'}</button>
     </form></section>}
     <div className="table-toolbar"><div className="search-field"><span>⌕</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`搜索${data.title}`} /></div><select value={status} onChange={e => setStatus(e.target.value)}><option value="all">全部状态</option><option value="active">正常 / 已启用</option><option value="pending">待处理</option><option value="disabled">已停用</option></select><button className="filter-reset" onClick={() => {setSearch('');setStatus('all');}}>重置筛选</button></div>
-    <section className="workspace-card table-card"><div className="table-scroll"><table><thead><tr>{data.columns.map(col => <th key={col}>{col}</th>)}</tr></thead><tbody>{loading ? <tr><td colSpan={data.columns.length}><div className="empty-state"><h3>正在读取真实数据…</h3></div></td></tr> : filteredItems.length ? filteredItems.map((item, index) => <tr key={item.id || item.order_no || index}>{(fields[moduleKey] || []).map((field, i) => <td key={field + i}>{field === 'actions' ? (moduleKey === 'admins' && item.is_protected ? '受保护' : moduleKey === 'delivery' && item.status === 'succeeded' ? '已完成' : <button className="filter-reset" onClick={() => runRowAction(item)}>{moduleKey === 'api' ? '吊销' : moduleKey === 'delivery' ? (['manual','internal'].includes(item.mode) ? '标记已交付' : '重试交付') : item.status === 'disabled' ? '启用' : '停用'}</button>) : cellValue(item[field], field)}</td>)}</tr>) : <tr><td colSpan={data.columns.length}><div className="empty-state"><div className="empty-symbol">{modules.find(m => m.key === moduleKey).code}</div><h3>{data.empty}</h3><p>{data.note}</p><span>{endpoints[moduleKey] ? '当前没有真实记录或接口暂不可用' : '该模块接口尚未接入'}</span></div></td></tr>}</tbody></table></div></section>
+    <section className="workspace-card table-card"><div className="table-scroll"><table><thead><tr>{data.columns.map(col => <th key={col}>{col}</th>)}</tr></thead><tbody>{loading ? <tr><td colSpan={data.columns.length}><div className="empty-state"><h3>正在读取真实数据…</h3></div></td></tr> : filteredItems.length ? filteredItems.map((item, index) => <tr key={item.id || item.order_no || index}>{(fields[moduleKey] || []).map((field, i) => <td key={field + i}>{field === 'actions' ? (admin?.role === 'viewer' ? '只读' : moduleKey === 'admins' && item.is_protected ? '受保护' : moduleKey === 'delivery' && item.status === 'succeeded' ? '已完成' : <button className="filter-reset" onClick={() => runRowAction(item)}>{moduleKey === 'api' ? '吊销' : moduleKey === 'delivery' ? (['manual','internal'].includes(item.mode) ? '标记已交付' : '重试交付') : item.status === 'disabled' ? '启用' : '停用'}</button>) : cellValue(item[field], field)}</td>)}</tr>) : <tr><td colSpan={data.columns.length}><div className="empty-state"><div className="empty-symbol">{modules.find(m => m.key === moduleKey).code}</div><h3>{data.empty}</h3><p>{data.note}</p><span>{endpoints[moduleKey] ? '当前没有真实记录或接口暂不可用' : '该模块接口尚未接入'}</span></div></td></tr>}</tbody></table></div></section>
     <div className="module-footnote">筛选控件和列表结构已建立；新增、编辑、删除及状态变更将在对应 API 和权限校验完成后开放。</div>
   </div>;
 }
