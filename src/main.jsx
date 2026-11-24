@@ -168,15 +168,35 @@ function App() {
   const [workspace, setWorkspace] = useState(false);
   const [admin, setAdmin] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [setupRequired, setSetupRequired] = useState(false);
+  const [setupSecret, setSetupSecret] = useState('');
+  const [initialPassword, setInitialPassword] = useState('');
+  const [confirmPassword, setConfirmPassword] = useState('');
   const [notice, setNotice] = useState('');
   useEffect(() => {
     let alive = true;
+    fetch('/api/auth/bootstrap-status', { credentials: 'include' }).then(r => r.json()).then(data => { if (alive) setSetupRequired(Boolean(data.required)); }).catch(() => {});
     fetch('/api/auth/me', { credentials: 'include' })
       .then(async response => response.ok ? response.json() : null)
       .then(data => { if (alive && data?.admin) { setAdmin(data.admin); setWorkspace(true); } })
       .catch(() => {});
     return () => { alive = false; };
   }, []);
+  async function handleBootstrap(event) {
+    event.preventDefault(); setNotice('');
+    if (initialPassword.length < 12) { setNotice('初始密码至少需要 12 位。'); return; }
+    if (initialPassword !== confirmPassword) { setNotice('两次输入的密码不一致。'); return; }
+    setBusy(true);
+    try {
+      const response = await fetch('/api/auth/bootstrap', { method: 'POST', headers: { 'content-type': 'application/json', 'X-Bootstrap-Secret': setupSecret }, credentials: 'include', body: JSON.stringify({ password: initialPassword }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error === 'forbidden' ? '初始化密钥不正确，请检查 Cloudflare Secret。' : '初始化失败：' + (data.error || response.status));
+      setSetupRequired(false); setSetupSecret(''); setInitialPassword(''); setConfirmPassword('');
+      setNotice('超级管理员初始化成功，请使用管理员邮箱和新密码登录。');
+    } catch (error) { setNotice(error.message || '初始化失败，请稍后重试。'); }
+    finally { setBusy(false); }
+  }
+  if (setupRequired) return <main className="page-shell"><section className="login-panel"><div className="mobile-brand"><Brand compact /></div><div className="login-card"><div className="login-heading"><div className="welcome-tag">FIRST TIME SETUP</div><h2>初始化超级管理员</h2><p>首次使用，请设置三个受保护超级管理员的统一密码。</p></div><form onSubmit={handleBootstrap}><label htmlFor="setupSecret">一次性初始化密钥</label><div className="input-wrap"><input id="setupSecret" type="password" value={setupSecret} onChange={e => setSetupSecret(e.target.value)} autoComplete="off" required /></div><label htmlFor="initialPassword">设置新密码</label><div className="input-wrap"><input id="initialPassword" type="password" value={initialPassword} onChange={e => setInitialPassword(e.target.value)} minLength={12} autoComplete="new-password" required /></div><label htmlFor="confirmPassword">再次确认密码</label><div className="input-wrap"><input id="confirmPassword" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} minLength={12} autoComplete="new-password" required /></div><button className="submit-button" type="submit" disabled={busy}>{busy ? '正在初始化…' : '完成初始化'}</button>{notice && <div className="notice" role="status">{notice}</div>}</form></div></section></main>;
   if (workspace) return <Dashboard admin={admin} onExit={async () => {
     await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
     setAdmin(null); setWorkspace(false);
