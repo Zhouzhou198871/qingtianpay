@@ -97,11 +97,11 @@ function Overview({ onNavigate }) {
     <div className="page-intro"><div><div className="page-eyebrow">OVERVIEW</div><h1>业务总览</h1><p>晴天旗下业务的统一支付管理入口。</p></div><div className="data-state"><i /> {health?.ok ? '服务正常' : '服务状态待确认'}</div></div>
     <div className="overview-grid">{cards.map(([label,value,hint,target]) => <button className="metric-card" key={label} onClick={() => onNavigate(target)}><span>{label}</span><strong>{value}</strong><small>{hint}</small></button>)}</div>
     <div className="overview-columns">
-      <section className="workspace-card"><div className="card-heading"><div><span className="section-kicker">SYSTEM STATUS</span><h2>系统接入进度</h2></div><span className="soft-tag">开发中</span></div>
+      <section className="workspace-card"><div className="card-heading"><div><span className="section-kicker">SYSTEM STATUS</span><h2>系统接入进度</h2></div><span className="soft-tag">生产服务</span></div>
         <div className="status-list">
           <div className="status-row"><span className="status-mark pending">01</span><div><b>独立数据库</b><small>服务器独立 SQLite 数据库已初始化，API 健康检查通过</small></div><em>已连接</em></div>
           <div className="status-row"><span className="status-mark pending">02</span><div><b>管理员认证</b><small>登录、会话和密码哈希接口已部署，等待首次超管初始化</small></div><em>待初始化</em></div>
-          <div className="status-row"><span className="status-mark pending">03</span><div><b>支付宝 JSAPI</b><small>AppID、应用密钥与商户 PID 已配置；服务端检查通过，真实收款能力仍需渠道联调确认</small></div><em>待联调</em></div>
+          <div className="status-row"><span className="status-mark pending">03</span><div><b>支付宝电脑 / 手机网站支付</b><small>电脑网站支付和手机网站支付的下单签名接口已部署；正式收款仍需支付宝产品权限与交易验收</small></div><em>待权限验收</em></div>
           <div className="status-row"><span className="status-mark pending">04</span><div><b>多网站数据隔离</b><small>站点 API Key、订单隔离和 Webhook 交付接口已建立，待接入业务网站</small></div><em>待接入业务</em></div>
         </div>
       </section>
@@ -263,16 +263,16 @@ function DataModule({ moduleKey, admin }) {
     <div className="settings-grid">
       <section className="workspace-card settings-card"><span className="section-kicker">LOGIN PROTECTION</span><h2>登录保护</h2><p>登录失败限流、异常尝试锁定、管理员登录验证和安全告警。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>身份验证</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">SESSION POLICY</span><h2>会话策略</h2><p>安全 Cookie、会话有效期、闲置超时和远程撤销会话。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>会话管理</span></div></section>
-      <section className="workspace-card settings-card"><span className="section-kicker">API CREDENTIALS</span><h2>接口凭证安全</h2><p>API 密钥仅展示一次，数据库只保存摘要，支持轮换与吊销。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>密钥保护</span></div></section>
-      <section className="workspace-card settings-card"><span className="section-kicker">SECURITY EVENTS</span><h2>安全事件</h2><p>登录失败、权限拒绝、凭证轮换和敏感配置变更统一记录。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>安全审计</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">API CREDENTIALS</span><h2>接口凭证安全</h2><p>API 密钥仅展示一次，数据库只保存摘要，支持轮换与吊销。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>密钥保护</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">SECURITY EVENTS</span><h2>安全事件</h2><p>登录失败、权限拒绝、凭证轮换和敏感配置变更统一记录。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>安全审计</span></div></section>
     </div>
   </div>;
   if (moduleKey === 'settings') return <div className="workspace-page">
     <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div></div>
     <div className="settings-grid">
-      <section className="workspace-card settings-card"><span className="section-kicker">PAYMENT CHANNEL</span><h2>支付渠道</h2><p>AppID：{health?.alipay?.app_id ? '已配置' : '未配置'}；应用私钥：{health?.alipay?.private_key ? '已配置' : '未配置'}；支付宝公钥：{health?.alipay?.public_key ? '已配置' : '未配置'}；商户 PID：{health?.alipay?.seller_id ? '已配置' : '未配置'}。异步通知地址：{health?.alipay?.notify_url || '未配置'}。密钥保存在服务器受限目录。</p><div className="setting-bottom"><span className="soft-tag">{health?.alipay?.seller_id ? '渠道参数齐备，待真实联调' : '缺少商户 PID'}</span><span>支付宝</span></div></section>
-      <section className="workspace-card settings-card"><span className="section-kicker">SECURITY</span><h2>安全策略</h2><p>登录限流、安全会话、管理员权限保护、API 凭证哈希和操作审计。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>访问控制</span></div></section>
-      <section className="workspace-card settings-card"><span className="section-kicker">DATA ISOLATION</span><h2>数据隔离</h2><p>每笔业务数据绑定站点上下文。服务端从 API 凭证解析站点身份，不信任客户端传入的站点标识。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>站点隔离</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">PAYMENT CHANNEL</span><h2>支付渠道</h2><p>AppID：{health?.alipay?.app_id ? '已配置' : '未配置'}；应用私钥：{health?.alipay?.private_key ? '已配置' : '未配置'}；支付宝公钥：{health?.alipay?.public_key ? '已配置' : '未配置'}；商户 PID：{health?.alipay?.seller_id ? '已配置' : '未配置'}。异步通知地址：{health?.alipay?.notify_url || '未配置'}。密钥保存在服务器受限目录。</p><div className="setting-bottom"><span className="soft-tag">{health?.alipay?.seller_id ? '服务器参数已配置，待支付宝产品权限验收' : '缺少商户 PID'}</span><span>支付宝</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">SECURITY</span><h2>安全策略</h2><p>登录限流、安全会话、管理员权限保护、API 凭证哈希和操作审计。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>访问控制</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">DATA ISOLATION</span><h2>数据隔离</h2><p>每笔业务数据绑定站点上下文。服务端从 API 凭证解析站点身份，不信任客户端传入的站点标识。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>站点隔离</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">AUDIT LOG</span><h2>操作审计</h2><p>记录管理员、操作类型、目标资源、执行结果和时间，拒绝与失败操作同样留痕。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>审计记录</span></div></section>
     </div>
   </div>;
