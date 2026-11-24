@@ -274,16 +274,24 @@ async function handle(request, env) {
     const name = String(payload?.name || "").trim();
     const slug = String(payload?.slug || "").trim().toLowerCase();
     if (!name || !/^[a-z0-9][a-z0-9-]{1,48}$/.test(slug)) return json({ error: "invalid_site" }, 400);
+    const deliveryMode = ["manual","webhook","internal"].includes(payload?.delivery_mode) ? payload.delivery_mode : "manual";
+    let deliveryConfig = null;
+    if (deliveryMode === "webhook") {
+      let endpoint;
+      try { endpoint = new URL(String(payload?.delivery_url || "")); } catch { return json({ error: "invalid_delivery_url" }, 400); }
+      if (endpoint.protocol !== "https:" || ["localhost","127.0.0.1","0.0.0.0","::1"].includes(endpoint.hostname)) return json({ error: "delivery_url_must_be_public_https" }, 400);
+      deliveryConfig = JSON.stringify({ url: endpoint.toString() });
+    }
     const id = randomId(16);
     try {
-      await env.DB.prepare("INSERT INTO business_sites (id,name,slug,base_url) VALUES (?,?,?,?)").bind(id,name,slug,payload?.base_url || null).run();
+      await env.DB.prepare("INSERT INTO business_sites (id,name,slug,base_url,delivery_mode,delivery_config_json) VALUES (?,?,?,?,?,?)").bind(id,name,slug,payload?.base_url || null,deliveryMode,deliveryConfig).run();
       await audit(env.DB, admin.id, "site.create", "business_sites", id);
       return json({ id,name,slug }, 201);
     } catch { return json({ error: "site_conflict_or_database_error" }, 409); }
   }
 
   if (path === "/api/products" && method === "GET") {
-    const rows = await env.DB.prepare("SELECT p.id,p.site_id,s.name AS site_name,p.name,p.description,p.amount_minor,p.currency,p.status,p.created_at FROM products p JOIN business_sites s ON s.id=p.site_id ORDER BY p.created_at DESC").all();
+    const rows = await env.DB.prepare("SELECT p.id,p.site_id,s.name AS site_name,p.name,p.description,p.amount_minor,p.currency,p.status,p.delivery_rule_json,p.created_at,p.updated_at FROM products p JOIN business_sites s ON s.id=p.site_id ORDER BY p.created_at DESC").all();
     return json({ items: rows.results || [] });
   }
   if (path === "/api/products" && method === "POST") {
@@ -295,7 +303,7 @@ async function handle(request, env) {
     const site = await env.DB.prepare("SELECT id FROM business_sites WHERE id=? AND status='active'").bind(siteId).first();
     if (!site) return json({ error: "site_not_found" }, 404);
     const id = randomId(16);
-    await env.DB.prepare("INSERT INTO products (id,site_id,name,description,amount_minor,currency) VALUES (?,?,?,?,?,'CNY')").bind(id,siteId,name,payload?.description || null,amount).run();
+    await env.DB.prepare("INSERT INTO products (id,site_id,name,description,amount_minor,currency,delivery_rule_json) VALUES (?,?,?,?,?,'CNY',?)").bind(id,siteId,name,payload?.description || null,amount,payload?.delivery_rule ? JSON.stringify(payload.delivery_rule) : null).run();
     await audit(env.DB, admin.id, "product.create", "products", id, "success", { site_id: siteId });
     return json({ id,site_id: siteId,name,amount_minor: amount,currency: "CNY" }, 201);
   }
