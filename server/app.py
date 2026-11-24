@@ -157,8 +157,9 @@ def deliver(c,order_id):
         cfg=json.loads(o["delivery_config_json"] or "{}"); url=safe_webhook(cfg.get("url") or cfg.get("delivery_url") or "")
         payload={"event":"order.paid","idempotency_key":key,"order_no":o["order_no"],"site_id":o["site_id"],"product_id":o["product_id"],"product_name":o["product_name"],"amount_minor":o["amount_minor"],"currency":o["currency"],"paid_at":o["paid_at"]}
         raw=json.dumps(payload,separators=(",",":"),ensure_ascii=False).encode()
-        claim=c.execute("UPDATE delivery_records SET status='processing',attempt_count=attempt_count+1,request_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('pending','failed')",(raw.decode(),d["id"]))
+        claim=c.execute("UPDATE delivery_records SET status='processing',attempt_count=attempt_count+1,request_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND (status IN ('pending','failed') OR (status='processing' AND updated_at < datetime('now','-5 minutes'))) ",(raw.decode(),d["id"]))
         if claim.rowcount!=1: return
+        c.commit()  # Persist the claim before network I/O; stale processing can be recovered.
         secret=site_delivery_secret(o["site_id"])
         sig=hmac.new(secret.encode(),raw,hashlib.sha256).hexdigest()
         rq=Request(url,data=raw,headers={"Content-Type":"application/json","x-qingtian-event":"order.paid","x-qingtian-signature":sig,"idempotency-key":key},method="POST")
@@ -309,7 +310,7 @@ def deliveries(req:FRequest):
     c=db(); need_admin(req,c); x=rows(c.execute("SELECT d.*,o.order_no,s.name site_name FROM delivery_records d JOIN orders o ON o.id=d.order_id JOIN business_sites s ON s.id=d.site_id ORDER BY d.created_at DESC LIMIT 300")); c.close(); return {"items":x}
 @app.post("/api/deliveries/{did}/retry")
 def retry_delivery(did:str,req:FRequest):
-    c=db(); a=need_admin(req,c,True); d=c.execute("SELECT order_id FROM delivery_records WHERE id=? AND status IN ('pending','failed')",(did,)).fetchone()
+    c=db(); a=need_admin(req,c,True); d=c.execute("SELECT order_id FROM delivery_records WHERE id=? AND (status IN ('pending','failed') OR (status='processing' AND updated_at < datetime('now','-5 minutes'))) ",(did,)).fetchone()
     if not d: c.close(); raise HTTPException(409,"delivery_not_retryable")
     deliver(c,d["order_id"]); audit(c,a["id"],"delivery.retry","delivery",did); c.commit(); x=dict(c.execute("SELECT status,attempt_count,last_error FROM delivery_records WHERE id=?",(did,)).fetchone()); c.close(); return x
 @app.post("/api/deliveries/{did}/complete")
