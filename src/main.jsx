@@ -241,7 +241,7 @@ function DataModule({ moduleKey, admin }) {
       const response = await apiFetch(endpoint, { method:'POST', headers:{'content-type':'application/json'}, credentials:'include', body:JSON.stringify(payload) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || data.detail || '创建失败');
-      if (moduleKey === 'api') setCreatedKey(data.api_key || '');
+      if (moduleKey === 'api' || moduleKey === 'sites') setCreatedKey(data.api_key || '');
       if (moduleKey === 'sites' && data.delivery_secret) setCreatedDeliverySecret(data.delivery_secret);
       setShowCreate(false);
       setForm({ name:'', slug:'', base_url:'', delivery_mode:'manual', delivery_url:'', site_id:'', amount:'', description:'', delivery_rule:'', label:'', email:'', password:'', role:'operator', order_id:'', reason:'' });
