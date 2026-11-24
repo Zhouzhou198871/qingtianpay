@@ -18,6 +18,6 @@ This Worker is the API runtime for the independent Qingtian Pay project.
 4. Remove/rotate the bootstrap secret after initialization.
 5. Verify `GET /api/health`, login, logout, and session expiry.
 
-Passwords are stored as PBKDF2-HMAC-SHA-256 hashes using 310,000 iterations and a random salt. Session tokens are random, stored only as SHA-256 hashes, and delivered using Secure, HttpOnly, SameSite=Strict cookies.
+Passwords are stored as PBKDF2-HMAC-SHA-256 hashes using 600,000 iterations and a random salt. Session tokens are random, stored only as SHA-256 hashes, and delivered using Secure, HttpOnly, SameSite=None cookies.
 
 The API currently includes health, protected-superadmin bootstrap, login/logout/session introspection, site creation/listing, product creation/listing, order listing, and administrator listing. Alipay signing/notification/refund and delivery execution are not yet implemented; those routes must not be presented as production-ready until their integration and end-to-end tests are complete.
