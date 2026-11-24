@@ -317,7 +317,7 @@ async def create_payment(req:FRequest):
     c.execute("INSERT INTO orders(id,site_id,order_no,external_order_no,product_id,buyer_ref,buyer_email,amount_minor,currency,status,subject,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,'pending',?,?)",(oid,k["site_id"],order_no,ext,product["id"],b.get("buyer_ref"),b.get("buyer_email"),product["amount_minor"],product["currency"],product["name"],json.dumps(b.get("metadata") or {})))
     c.execute("INSERT INTO payments(id,site_id,order_id,channel,channel_out_trade_no,amount_minor,status) VALUES(?,?,?,'alipay',?,?,'processing')",(pid,k["site_id"],oid,order_no,product["amount_minor"])); c.commit()
     try:
-        amount=f'{product["amount_minor"]/100:.2f}'
+        amount=f'{(Decimal(product["amount_minor"])/Decimal(100)):.2f}'
         if method=="alipay_qr":
             result=alipay("alipay.trade.precreate",{"out_trade_no":order_no,"total_amount":amount,"subject":product["name"],"timeout_express":"15m"})
             qr_code=result.get("qr_code")
@@ -376,7 +376,7 @@ async def create_refund(req:FRequest):
     try: c.execute("INSERT INTO refunds(id,site_id,order_id,payment_id,refund_no,amount_minor,reason,status,requested_by) VALUES(?,?,?,?,?,?,?,'processing',?)",(rid,o["site_id"],o["id"],o["payment_id"],refund_no,amount,b.get("reason"),a["id"])); c.commit()
     except Exception: c.close(); raise HTTPException(409,"refund_amount_exceeds_remaining")
     try:
-        r=alipay("alipay.trade.refund",{"out_trade_no":o["order_no"],"refund_amount":f"{amount/100:.2f}","out_request_no":refund_no,"refund_reason":b.get("reason") or "customer request"})
+        r=alipay("alipay.trade.refund",{"out_trade_no":o["order_no"],"refund_amount":f"{(Decimal(amount)/Decimal(100)):.2f}","out_request_no":refund_no,"refund_reason":b.get("reason") or "customer request"})
         c.execute("UPDATE refunds SET status='succeeded',channel_refund_no=?,processed_at=CURRENT_TIMESTAMP WHERE id=?",(r.get("trade_no") or r.get("out_trade_no"),rid))
         total=c.execute("SELECT COALESCE(SUM(amount_minor),0) FROM refunds WHERE order_id=? AND status='succeeded'",(o["id"],)).fetchone()[0]
         if total>=o["amount_minor"]: c.execute("UPDATE orders SET status='refunded' WHERE id=?",(o["id"],))
