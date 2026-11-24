@@ -76,6 +76,12 @@ function DataModule({ moduleKey }) {
   const [status, setStatus] = useState('all');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
+  const [showCreate, setShowCreate] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [formError, setFormError] = useState('');
+  const [createdKey, setCreatedKey] = useState('');
+  const [siteOptions, setSiteOptions] = useState([]);
+  const [form, setForm] = useState({ name:'', slug:'', base_url:'', delivery_mode:'manual', delivery_url:'', site_id:'', amount:'', description:'', delivery_rule:'', label:'', email:'', password:'', role:'operator' });
   const endpoints = { sites: '/api/sites', products: '/api/products', api: '/api/api-keys', orders: '/api/orders', payments: '/api/payments', refunds: '/api/refunds', delivery: '/api/deliveries', admins: '/api/admins', logs: '/api/audit-logs', revenue: '/api/analytics/revenue', ledger: '/api/ledger' };
   const fields = {
     sites: ['name','slug','base_url','key_prefix','status','created_at'],
@@ -102,6 +108,40 @@ function DataModule({ moduleKey }) {
     }).then(rows => { if (alive) setItems(rows); }).catch(() => { if (alive) setItems([]); }).finally(() => { if (alive) setLoading(false); });
     return () => { alive = false; };
   }, [moduleKey]);
+  useEffect(() => {
+    if (!['products','api'].includes(moduleKey)) return;
+    fetch('/api/sites', { credentials:'include' }).then(r => r.json()).then(data => setSiteOptions(data.items || [])).catch(() => setSiteOptions([]));
+  }, [moduleKey]);
+  async function submitCreate(event) {
+    event.preventDefault(); setSaving(true); setFormError('');
+    try {
+      let endpoint = '', payload = {};
+      if (moduleKey === 'sites') {
+        endpoint = '/api/sites';
+        payload = { name:form.name, slug:form.slug, base_url:form.base_url || null, delivery_mode:form.delivery_mode, delivery_url:form.delivery_url || null };
+      } else if (moduleKey === 'products') {
+        endpoint = '/api/products';
+        payload = { site_id:form.site_id, name:form.name, amount_minor:Math.round(Number(form.amount) * 100), description:form.description || null, delivery_rule:form.delivery_rule ? JSON.parse(form.delivery_rule) : null };
+      } else if (moduleKey === 'api') {
+        endpoint = '/api/sites/' + encodeURIComponent(form.site_id) + '/api-keys';
+        payload = { label:form.label || '默认 API 凭证' };
+      } else if (moduleKey === 'admins') {
+        endpoint = '/api/admins';
+        payload = { email:form.email, password:form.password, role:form.role };
+      }
+      if (!endpoint) throw new Error('此模块暂不支持创建');
+      const response = await fetch(endpoint, { method:'POST', headers:{'content-type':'application/json'}, credentials:'include', body:JSON.stringify(payload) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error || '创建失败');
+      if (moduleKey === 'api') setCreatedKey(data.api_key || '');
+      setShowCreate(false);
+      setForm({ name:'', slug:'', base_url:'', delivery_mode:'manual', delivery_url:'', site_id:'', amount:'', description:'', delivery_rule:'', label:'', email:'', password:'', role:'operator' });
+      const refreshed = await fetch(endpoints[moduleKey], { credentials:'include' });
+      const result = await refreshed.json().catch(() => ({}));
+      setItems(result.items || []);
+    } catch (error) { setFormError(error.message || '创建失败'); }
+    finally { setSaving(false); }
+  }
   const filteredItems = items.filter(item => {
     const matchesSearch = !search || JSON.stringify(item).toLowerCase().includes(search.toLowerCase());
     const matchesStatus = status === 'all' || item.status === status || (status === 'active' && ['succeeded','paid'].includes(item.status)) || (status === 'pending' && ['processing','created'].includes(item.status));
@@ -144,7 +184,15 @@ function DataModule({ moduleKey }) {
     </div>
   </div>;
   return <div className="workspace-page">
-    <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div>{data.action && <button className="primary-action" disabled title="数据库与服务端接口接通后启用">{data.action}</button>}</div>
+    <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div>{data.action && ['sites','products','api','admins'].includes(moduleKey) && <button className="primary-action" onClick={() => { setFormError(''); setShowCreate(true); }}>{data.action}</button>}</div>
+    {createdKey && <section className="workspace-card create-panel"><b>新 API Key（仅显示一次，请立即保存）</b><code>{createdKey}</code><button className="filter-reset" onClick={() => setCreatedKey('')}>我已保存</button></section>}
+    {showCreate && <section className="workspace-card create-panel"><div className="card-heading"><h2>{data.action}</h2><button className="filter-reset" type="button" onClick={() => setShowCreate(false)}>取消</button></div><form onSubmit={submitCreate} className="create-form">
+      {moduleKey === 'sites' && <><label>网站名称<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} /></label><label>站点标识（小写字母、数字、短横线）<input required value={form.slug} onChange={e=>setForm({...form,slug:e.target.value})} /></label><label>网站地址<input type="url" value={form.base_url} onChange={e=>setForm({...form,base_url:e.target.value})} placeholder="https://example.com" /></label><label>交付模式<select value={form.delivery_mode} onChange={e=>setForm({...form,delivery_mode:e.target.value})}><option value="manual">人工交付</option><option value="webhook">Webhook 自动交付</option><option value="internal">内部交付</option></select></label>{form.delivery_mode === 'webhook' && <label>HTTPS 交付接口<input required type="url" value={form.delivery_url} onChange={e=>setForm({...form,delivery_url:e.target.value})} placeholder="https://example.com/api/delivery" /></label>}</>}
+      {moduleKey === 'products' && <><label>所属网站<select required value={form.site_id} onChange={e=>setForm({...form,site_id:e.target.value})}><option value="">请选择网站</option>{siteOptions.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><label>商品名称<input required value={form.name} onChange={e=>setForm({...form,name:e.target.value})} /></label><label>价格（人民币元）<input required type="number" min="0.01" step="0.01" value={form.amount} onChange={e=>setForm({...form,amount:e.target.value})} /></label><label>商品说明<textarea value={form.description} onChange={e=>setForm({...form,description:e.target.value})} /></label><label>交付规则 JSON（可选）<textarea value={form.delivery_rule} onChange={e=>setForm({...form,delivery_rule:e.target.value})} placeholder='{"type":"license"}' /></label></>}
+      {moduleKey === 'api' && <><label>所属网站<select required value={form.site_id} onChange={e=>setForm({...form,site_id:e.target.value})}><option value="">请选择网站</option>{siteOptions.map(s=><option key={s.id} value={s.id}>{s.name}</option>)}</select></label><label>凭证名称<input value={form.label} onChange={e=>setForm({...form,label:e.target.value})} /></label></>}
+      {moduleKey === 'admins' && <><label>管理员邮箱<input required type="email" value={form.email} onChange={e=>setForm({...form,email:e.target.value})} /></label><label>初始密码（至少 12 位）<input required type="password" minLength={12} value={form.password} onChange={e=>setForm({...form,password:e.target.value})} /></label><label>角色<select value={form.role} onChange={e=>setForm({...form,role:e.target.value})}><option value="operator">运营管理员</option><option value="viewer">只读管理员</option></select></label></>}
+      {formError && <p className="notice">{formError}</p>}<button className="submit-button" type="submit" disabled={saving}>{saving ? '正在保存…' : '确认创建'}</button>
+    </form></section>}
     <div className="table-toolbar"><div className="search-field"><span>⌕</span><input value={search} onChange={e => setSearch(e.target.value)} placeholder={`搜索${data.title}`} /></div><select value={status} onChange={e => setStatus(e.target.value)}><option value="all">全部状态</option><option value="active">正常 / 已启用</option><option value="pending">待处理</option><option value="disabled">已停用</option></select><button className="filter-reset" onClick={() => {setSearch('');setStatus('all');}}>重置筛选</button></div>
     <section className="workspace-card table-card"><div className="table-scroll"><table><thead><tr>{data.columns.map(col => <th key={col}>{col}</th>)}</tr></thead><tbody>{loading ? <tr><td colSpan={data.columns.length}><div className="empty-state"><h3>正在读取真实数据…</h3></div></td></tr> : filteredItems.length ? filteredItems.map((item, index) => <tr key={item.id || item.order_no || index}>{(fields[moduleKey] || []).map((field, i) => <td key={field + i}>{cellValue(item[field], field)}</td>)}</tr>) : <tr><td colSpan={data.columns.length}><div className="empty-state"><div className="empty-symbol">{modules.find(m => m.key === moduleKey).code}</div><h3>{data.empty}</h3><p>{data.note}</p><span>{endpoints[moduleKey] ? '当前没有真实记录或接口暂不可用' : '该模块接口尚未接入'}</span></div></td></tr>}</tbody></table></div></section>
     <div className="module-footnote">筛选控件和列表结构已建立；新增、编辑、删除及状态变更将在对应 API 和权限校验完成后开放。</div>
