@@ -80,13 +80,14 @@ def alipay(method,biz):
     p["sign"]=sign_alipay(p)
     req=Request(ALIPAY_GATEWAY,data=urlencode(p).encode(),headers={"Content-Type":"application/x-www-form-urlencoded;charset=utf-8"},method="POST")
     with build_opener(HTTPHandler,NoRedirect()).open(req,timeout=20) as res: raw=res.read(2_000_000)
-    outer=json.loads(raw); result=outer.get(method.replace(".","_")+"_response",{})
-    if outer.get("error_response") or not isinstance(result,dict) or result.get("code")!="10000": raise RuntimeError("alipay_error:"+str(result or outer.get("error_response")))
+    outer=json.loads(raw)
+    response_key=method.replace(".","_")+"_response" if method.replace(".","_")+"_response" in outer else "error_response"
+    result=outer.get(response_key,{})
     signature=outer.get("sign")
     if not signature: raise RuntimeError("alipay_response_signature_missing")
     pem=read_key(ALIPAY_PUBLIC_KEY_FILE)
     public_key=serialization.load_pem_public_key(pem) if b"BEGIN" in pem else serialization.load_pem_public_key(b"-----BEGIN PUBLIC KEY-----\n"+pem.strip()+b"\n-----END PUBLIC KEY-----")
-    marker=('"'+method.replace(".","_")+"_response"+'":').encode()
+    marker=('"'+response_key+'":').encode()
     marker_pos=raw.find(marker)
     start=raw.find(b"{",marker_pos+len(marker)) if marker_pos>=0 else -1
     if start<0: raise RuntimeError("alipay_response_signature_payload_missing")
