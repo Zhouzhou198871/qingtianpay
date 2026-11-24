@@ -1,0 +1,13 @@
+name = "qingtianpay-api"
+main = "worker/index.js"
+compatibility_date = "2026-11-24"
+workers_dev = true
+
+[vars]
+ADMIN_ORIGIN = "https://zhouzhou198871.github.io"
+
+[[d1_databases]]
+binding = "DB"
+database_name = "qingtianpay-db"
+database_id = "REPLACE_WITH_NEW_DATABASE_ID"
+migrations_dir = "migrations"
