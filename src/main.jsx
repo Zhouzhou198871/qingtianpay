@@ -13,6 +13,7 @@ const modules = [
   { key: 'overview', label: '总览', group: '工作台', code: '01', description: '查看支付中心整体运行情况、待处理事项与业务概况。' },
   { key: 'sites', label: '业务网站', group: '业务管理', code: '02', description: '管理接入支付中心的自有网站、站点状态和独立 API 凭证。' },
   { key: 'products', label: '商品管理', group: '业务管理', code: '03', description: '按业务网站管理商品名称、价格、状态和交付规则。' },
+  { key: 'api', label: 'API 接口管理', group: '业务管理', code: '04', description: '管理各业务网站独立 API 凭证、权限范围、轮换和调用记录。' },
   { key: 'orders', label: '订单管理', group: '交易中心', code: '04', description: '统一查询各业务网站订单，查看订单状态和完整交易信息。' },
   { key: 'payments', label: '支付记录', group: '交易中心', code: '05', description: '查看支付宝交易流水、支付结果与异步通知处理记录。' },
   { key: 'refunds', label: '退款管理', group: '交易中心', code: '06', description: '处理退款申请，追踪渠道退款状态与退款结果。' },
@@ -29,6 +30,7 @@ const modules = [
 const moduleData = {
   sites: { title: '业务网站', eyebrow: 'BUSINESS SITES', action: '添加业务网站', columns: ['网站名称', '站点标识', '网站地址', 'API 凭证', '状态', '创建时间'], empty: '还没有接入业务网站', note: '添加网站后，每个网站会获得独立的站点标识和 API 凭证。各站点商品、订单与交付数据相互隔离。' },
   products: { title: '商品管理', eyebrow: 'PRODUCT CATALOG', action: '添加商品', columns: ['商品名称', '所属网站', '商品价格', '币种', '交付方式', '状态', '更新时间'], empty: '暂无商品', note: '商品必须归属于一个业务网站。商品价格以人民币分为单位存储，避免浮点金额误差。' },
+  api: { title: 'API 接口管理', eyebrow: 'API ACCESS', action: '创建 API 凭证', columns: ['凭证名称', '所属网站', 'Key 前缀', '权限范围', '最近调用', '有效期', '状态'], empty: '暂无 API 凭证', note: '每个业务网站使用独立 API 凭证。密钥只在创建时展示一次，数据库只保存 SHA-256 摘要；支持轮换、吊销和调用审计。' },
   orders: { title: '订单管理', eyebrow: 'ORDERS', action: '', columns: ['订单编号', '所属网站', '商品 / 订单标题', '订单金额', '买家信息', '订单状态', '创建时间'], empty: '暂无订单记录', note: '订单数据将按站点隔离展示。支付成功状态以服务端验签和渠道查询结果为准。' },
   payments: { title: '支付记录', eyebrow: 'PAYMENT TRANSACTIONS', action: '', columns: ['支付流水号', '订单编号', '所属网站', '支付渠道', '支付金额', '支付状态', '支付时间'], empty: '暂无支付流水', note: '首期接入支付宝官方接口。异步通知验签、主动查询补偿和幂等处理将在服务端实现。' },
   refunds: { title: '退款管理', eyebrow: 'REFUNDS', action: '', columns: ['退款单号', '原订单号', '所属网站', '退款金额', '退款原因', '退款状态', '申请时间'], empty: '暂无退款申请', note: '退款状态将与支付宝渠道结果同步，保留每次操作记录和管理员审计信息。' },
