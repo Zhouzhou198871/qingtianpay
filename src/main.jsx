@@ -5,7 +5,7 @@ import './style.css';
 const API_BASE = 'https://pay-api.lynli.me';
 function apiFetch(input, init = {}) {
   const target = typeof input === 'string' && input.startsWith('/api/') ? API_BASE + input : input;
-  return apiFetch(target, { ...init, credentials: init.credentials ?? 'include' });
+  return fetch(target, { ...init, credentials: init.credentials ?? 'include' });
 }
 
 
