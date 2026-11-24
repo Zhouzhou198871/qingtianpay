@@ -76,10 +76,10 @@ function DataModule({ moduleKey }) {
   const [status, setStatus] = useState('all');
   const [items, setItems] = useState([]);
   const [loading, setLoading] = useState(true);
-  const endpoints = { sites: '/api/sites', products: '/api/products', orders: '/api/orders', payments: '/api/payments', refunds: '/api/refunds', delivery: '/api/deliveries', admins: '/api/admins', logs: '/api/audit-logs', revenue: '/api/analytics/revenue', ledger: '/api/ledger' };
+  const endpoints = { sites: '/api/sites', products: '/api/products', api: '/api/api-keys', orders: '/api/orders', payments: '/api/payments', refunds: '/api/refunds', delivery: '/api/deliveries', admins: '/api/admins', logs: '/api/audit-logs', revenue: '/api/analytics/revenue', ledger: '/api/ledger' };
   const fields = {
     sites: ['name','slug','base_url','key_prefix','status','created_at'],
-    products: ['name','site_name','amount_minor','currency','delivery_mode','status','updated_at'],
+    products: ['name','site_name','amount_minor','currency','delivery_mode','status','updated_at'],\n    api: ['label','site_name','key_prefix','scope','last_used_at','expires_at','status'],
     orders: ['order_no','site_name','subject','amount_minor','buyer_ref','status','created_at'],
     payments: ['channel_trade_no','order_no','site_name','channel','amount_minor','status','paid_at'],
     refunds: ['refund_no','order_no','site_name','amount_minor','reason','status','created_at'],
@@ -109,7 +109,7 @@ function DataModule({ moduleKey }) {
   function cellValue(value, field) {
     if (value === null || value === undefined || value === '') return '—';
     if (['amount_minor','gross_minor','refund_minor','net_minor'].includes(field)) return '¥' + (Number(value) / 100).toFixed(2);
-    if (field === 'is_protected') return value ? '受保护' : '普通管理员';
+    if (field === 'is_protected') return value ? '受保护' : '普通管理员';\n    if (field === 'scope') return '仅限所属站点';
     if (field === 'status') return ({ active: '正常', disabled: '停用', pending: '待处理', paid: '已支付', succeeded: '成功', failed: '失败', processing: '处理中', refunded: '已退款', closed: '已关闭' })[value] || value;
     if (field.endsWith('_at')) return String(value).replace('T',' ').replace('Z','').slice(0,19);
     return String(value);
