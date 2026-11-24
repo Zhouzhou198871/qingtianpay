@@ -70,7 +70,7 @@ function Overview({ onNavigate }) {
   </div>;
 }
 
-function DataModule({ moduleKey }) {
+function DataModule({ moduleKey, admin }) {
   const data = moduleData[moduleKey];
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
@@ -82,6 +82,9 @@ function DataModule({ moduleKey }) {
   const [createdKey, setCreatedKey] = useState('');
   const [siteOptions, setSiteOptions] = useState([]);
   const [form, setForm] = useState({ name:'', slug:'', base_url:'', delivery_mode:'manual', delivery_url:'', site_id:'', amount:'', description:'', delivery_rule:'', label:'', email:'', password:'', role:'operator' });
+  const [currentPassword, setCurrentPassword] = useState('');
+  const [newPassword, setNewPassword] = useState('');
+  const [passwordNotice, setPasswordNotice] = useState('');
   const endpoints = { sites: '/api/sites', products: '/api/products', api: '/api/api-keys', orders: '/api/orders', payments: '/api/payments', refunds: '/api/refunds', delivery: '/api/deliveries', admins: '/api/admins', logs: '/api/audit-logs', revenue: '/api/analytics/revenue', ledger: '/api/ledger' };
   const fields = {
     sites: ['name','slug','base_url','key_prefix','status','created_at'],
@@ -112,6 +115,16 @@ function DataModule({ moduleKey }) {
     if (!['products','api'].includes(moduleKey)) return;
     fetch('/api/sites', { credentials:'include' }).then(r => r.json()).then(data => setSiteOptions(data.items || [])).catch(() => setSiteOptions([]));
   }, [moduleKey]);
+  async function submitPasswordChange(event) {
+    event.preventDefault(); setPasswordNotice('');
+    if (newPassword.length < 12) { setPasswordNotice('新密码至少需要 12 位。'); return; }
+    try {
+      const response = await fetch('/api/auth/change-password', { method:'POST', headers:{'content-type':'application/json'}, credentials:'include', body:JSON.stringify({ current_password:currentPassword, new_password:newPassword }) });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error === 'current_password_incorrect' ? '当前密码不正确。' : (data.error || '密码修改失败'));
+      setCurrentPassword(''); setNewPassword(''); setPasswordNotice('密码已更新，其他登录会话已退出。');
+    } catch (error) { setPasswordNotice(error.message || '密码修改失败'); }
+  }
   async function submitCreate(event) {
     event.preventDefault(); setSaving(true); setFormError('');
     try {
@@ -157,12 +170,12 @@ function DataModule({ moduleKey }) {
     return String(value);
   }
   if (moduleKey === 'profile') return <div className="workspace-page">
-    <div className="page-intro"><div><div className="page-eyebrow">MY ACCOUNT</div><h1>个人中心</h1><p>管理当前登录账号的资料、安全凭证和登录状态。</p></div></div>
+    <div className="page-intro"><div><div className="page-eyebrow">MY ACCOUNT</div><h1>个人中心</h1><p>管理当前登录账号的资料与安全凭证。</p></div></div>
     <div className="settings-grid">
-      <section className="workspace-card settings-card"><span className="section-kicker">ACCOUNT PROFILE</span><h2>个人资料</h2><p>认证服务接入后显示当前管理员邮箱、账号名称、所属角色和账号创建时间。个人资料修改将保留变更记录。</p><div className="setting-bottom"><span className="soft-tag">等待登录认证</span><span>账号信息</span></div></section>
-      <section className="workspace-card settings-card"><span className="section-kicker">PASSWORD & SECURITY</span><h2>密码与安全</h2><p>支持修改登录密码、查看密码更新时间，并对敏感操作执行身份验证。密码仅以安全哈希形式保存。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>安全凭证</span></div></section>
-      <section className="workspace-card settings-card"><span className="section-kicker">ACTIVE SESSIONS</span><h2>登录会话</h2><p>查看当前设备和其他已登录设备，支持退出指定会话及全部其他会话。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>设备管理</span></div></section>
-      <section className="workspace-card settings-card"><span className="section-kicker">ACCOUNT ACTIVITY</span><h2>账号活动</h2><p>查看最近登录时间、登录来源和安全事件。异常登录将进入安全审计记录。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>登录记录</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">ACCOUNT PROFILE</span><h2>个人资料</h2><p>登录邮箱：<b>{admin?.email || '—'}</b></p><p>账号角色：<b>{admin?.role === 'superadmin' ? '超级管理员' : admin?.role || '—'}</b></p><div className="setting-bottom"><span className="soft-tag">已认证</span><span>账号信息</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">PASSWORD & SECURITY</span><h2>修改登录密码</h2><form className="create-form" onSubmit={submitPasswordChange}><label>当前密码<input type="password" required autoComplete="current-password" value={currentPassword} onChange={e=>setCurrentPassword(e.target.value)} /></label><label>新密码（至少 12 位）<input type="password" required minLength={12} autoComplete="new-password" value={newPassword} onChange={e=>setNewPassword(e.target.value)} /></label><button className="submit-button" type="submit">更新密码</button></form>{passwordNotice && <p className="notice">{passwordNotice}</p>}</section>
+      <section className="workspace-card settings-card"><span className="section-kicker">ACTIVE SESSIONS</span><h2>登录会话</h2><p>修改密码后，当前会话保留，其他会话将自动退出。你也可以通过退出按钮结束当前会话。</p><div className="setting-bottom"><span className="soft-tag">HttpOnly Cookie</span><span>会话管理</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">ACCOUNT ACTIVITY</span><h2>账号活动</h2><p>登录成功、失败和密码修改都会记录到操作日志，便于安全追踪。</p><div className="setting-bottom"><span className="soft-tag">已启用审计</span><span>登录记录</span></div></section>
     </div>
   </div>;
   if (moduleKey === 'security') return <div className="workspace-page">
@@ -206,7 +219,7 @@ function Dashboard({ onExit, admin }) {
   return <main className="dashboard">
     <aside className="dash-sidebar"><Brand /><div className="sidebar-divider" /><div className="sidebar-groups">{groups.map(group => <div className="sidebar-group" key={group}><div className="dash-caption">{group}</div>{modules.filter(m => m.group === group).map(item => <button key={item.key} className={active === item.key ? 'dash-nav active' : 'dash-nav'} onClick={() => setActive(item.key)}><span className="nav-code">{item.code}</span>{item.label}</button>)}</div>)}</div><div className="sidebar-bottom"><div className="admin-chip"><span className="admin-avatar">管</span><div><b>{admin?.email || "管理员工作区"}</b><small>{admin?.role === "superadmin" ? "超级管理员" : "管理员"}</small></div></div><button className="dash-exit" onClick={onExit}>返回登录页</button></div></aside>
     <section className="dash-main"><header className="dash-top"><div className="breadcrumb"><span>晴天支付中心</span><i>/</i><b>{current.label}</b></div><div className="top-right"><span className="environment-tag">开发环境</span><button className="account-menu" onClick={() => setActive('profile')} aria-label="打开个人中心"><span className="top-logo">管</span><span>个人中心</span></button></div></header>
-      {active === 'overview' ? <Overview onNavigate={setActive} /> : <DataModule key={active} moduleKey={active} />}
+      {active === 'overview' ? <Overview onNavigate={setActive} /> : <DataModule key={active} moduleKey={active} admin={admin} />}
     </section>
   </main>;
 }
