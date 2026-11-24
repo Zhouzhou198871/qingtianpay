@@ -84,6 +84,96 @@ async function failedAttempt(db, identity) {
     .bind(identity, count, row && now - row.window_started_at <= 900 ? row.window_started_at : now, count >= 8 ? now + 900 : null).run();
 }
 
+
+function pemBytes(value) {
+  const clean = String(value || "").replace(/-----BEGIN [^-]+-----|-----END [^-]+-----|\\s/g, "");
+  const raw = atob(clean);
+  return Uint8Array.from(raw, c => c.charCodeAt(0));
+}
+async function alipayPrivateKey(env) {
+  if (!env.ALIPAY_PRIVATE_KEY) throw new Error("alipay_private_key_not_configured");
+  return crypto.subtle.importKey("pkcs8", pemBytes(env.ALIPAY_PRIVATE_KEY), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["sign"]);
+}
+async function alipayPublicKey(env) {
+  if (!env.ALIPAY_PUBLIC_KEY) throw new Error("alipay_public_key_not_configured");
+  return crypto.subtle.importKey("spki", pemBytes(env.ALIPAY_PUBLIC_KEY), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
+}
+function alipaySignContent(params) {
+  return Object.keys(params).filter(k => k !== "sign" && params[k] !== undefined && params[k] !== null && params[k] !== "")
+    .sort().map(k => k + "=" + (typeof params[k] === "string" ? params[k] : JSON.stringify(params[k]))).join("&");
+}
+function toBase64(bytes) { let s = ""; for (const b of new Uint8Array(bytes)) s += String.fromCharCode(b); return btoa(s); }
+async function alipayRequest(env, method, bizContent, notifyUrl) {
+  const params = {
+    app_id: env.ALIPAY_APP_ID,
+    method,
+    format: "JSON",
+    charset: "utf-8",
+    sign_type: "RSA2",
+    timestamp: new Date().toISOString().replace("T", " ").slice(0, 19),
+    version: "1.0",
+    biz_content: JSON.stringify(bizContent),
+  };
+  if (notifyUrl) params.notify_url = notifyUrl;
+  const signature = await crypto.subtle.sign("RSASSA-PKCS1-v1_5", await alipayPrivateKey(env), encoder.encode(alipaySignContent(params)));
+  params.sign = toBase64(signature);
+  const form = new URLSearchParams(params);
+  const response = await fetch(env.ALIPAY_GATEWAY || "https://openapi.alipay.com/gateway.do", { method: "POST", headers: { "content-type": "application/x-www-form-urlencoded;charset=utf-8" }, body: form.toString() });
+  const textBody = await response.text();
+  if (!response.ok) throw new Error("alipay_http_" + response.status);
+  let data;
+  try { data = JSON.parse(textBody); } catch { throw new Error("alipay_invalid_json_response"); }
+  const resultKey = method.replaceAll(".", "_") + "_response";
+  const result = data[resultKey];
+  if (!result || result.code !== "10000") throw new Error("alipay_api_error:" + (result?.sub_msg || result?.msg || "unknown"));
+  return result;
+}
+async function verifyAlipayNotify(env, params) {
+  if (params.app_id !== env.ALIPAY_APP_ID || params.sign_type !== "RSA2" || !params.sign) return false;
+  const signature = pemBytes(params.sign);
+  return crypto.subtle.verify("RSASSA-PKCS1-v1_5", await alipayPublicKey(env), signature, encoder.encode(alipaySignContent(params)));
+}
+function amountText(minor) { return (minor / 100).toFixed(2); }
+async function siteFromApiKey(request, db) {
+  const token = request.headers.get("Authorization")?.replace(/^Bearer\\s+/i, "");
+  if (!token) return null;
+  const row = await db.prepare("SELECT k.id AS key_id,k.site_id FROM site_api_keys k JOIN business_sites s ON s.id=k.site_id WHERE k.secret_hash=? AND k.status='active' AND s.status='active' LIMIT 1").bind(await digest(token)).first();
+  if (row) await db.prepare("UPDATE site_api_keys SET last_used_at=CURRENT_TIMESTAMP WHERE id=?").bind(row.key_id).run();
+  return row || null;
+}
+async function signDelivery(secret, payload) {
+  const key = await crypto.subtle.importKey("raw", encoder.encode(secret), { name: "HMAC", hash: "SHA-256" }, false, ["sign"]);
+  const sig = await crypto.subtle.sign("HMAC", key, encoder.encode(payload));
+  return [...new Uint8Array(sig)].map(v => v.toString(16).padStart(2, "0")).join("");
+}
+async function runDelivery(db, env, orderId) {
+  const order = await db.prepare("SELECT o.*,p.name AS product_name,p.delivery_rule_json,s.delivery_mode,s.delivery_config_json,s.name AS site_name FROM orders o LEFT JOIN products p ON p.id=o.product_id JOIN business_sites s ON s.id=o.site_id WHERE o.id=? AND o.status='paid'").bind(orderId).first();
+  if (!order) return;
+  const idempotencyKey = "delivery:" + order.id;
+  await db.prepare("INSERT OR IGNORE INTO delivery_records(id,site_id,order_id,idempotency_key,mode,status) VALUES(?,?,?,?,?,'pending')")
+    .bind(randomId(16), order.site_id, order.id, idempotencyKey, order.delivery_mode).run();
+  const task = await db.prepare("SELECT * FROM delivery_records WHERE idempotency_key=?").bind(idempotencyKey).first();
+  if (!task || task.status === "succeeded" || task.status === "processing") return;
+  if (order.delivery_mode !== "webhook") return;
+  let config = {};
+  try { config = JSON.parse(order.delivery_config_json || "{}"); } catch {}
+  if (!config.url || !env.DELIVERY_SIGNING_SECRET) {
+    await db.prepare("UPDATE delivery_records SET status='failed',last_error='delivery_webhook_not_configured',attempt_count=attempt_count+1,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(task.id).run();
+    return;
+  }
+  const payload = JSON.stringify({ event: "order.paid", order_no: order.order_no, external_order_no: order.external_order_no, site_id: order.site_id, product_id: order.product_id, product_name: order.product_name, amount_minor: order.amount_minor, currency: order.currency, buyer_ref: order.buyer_ref, paid_at: order.paid_at, idempotency_key: idempotencyKey });
+  const signature = await signDelivery(env.DELIVERY_SIGNING_SECRET, payload);
+  await db.prepare("UPDATE delivery_records SET status='processing',attempt_count=attempt_count+1,request_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(payload, task.id).run();
+  try {
+    const response = await fetch(config.url, { method: "POST", headers: { "content-type": "application/json", "x-qingtian-event": "order.paid", "x-qingtian-signature": signature, "idempotency-key": idempotencyKey }, body: payload });
+    const responseText = (await response.text()).slice(0, 4000);
+    await db.prepare("UPDATE delivery_records SET status=?,response_json=?,last_error=?,delivered_at=CASE WHEN ?='succeeded' THEN CURRENT_TIMESTAMP ELSE delivered_at END,updated_at=CURRENT_TIMESTAMP WHERE id=?")
+      .bind(response.ok ? "succeeded" : "failed", responseText, response.ok ? null : "webhook_http_" + response.status, response.ok ? "succeeded" : "failed", task.id).run();
+  } catch (error) {
+    await db.prepare("UPDATE delivery_records SET status='failed',last_error=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(String(error?.message || error).slice(0,500), task.id).run();
+  }
+}
+
 async function handle(request, env) {
   if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-methods": "GET,POST,OPTIONS", "access-control-allow-headers": "Content-Type,X-Bootstrap-Secret", "access-control-max-age": "86400" } });
   if (!env.DB) return json({ error: "database_not_configured" }, 503);
@@ -196,6 +286,108 @@ async function handle(request, env) {
 
   if (path === "/api/admins" && method === "GET") {
     const rows = await env.DB.prepare("SELECT id,email,role,status,is_protected,last_login_at,created_at FROM admin_accounts ORDER BY is_protected DESC,created_at").all();
+    return json({ items: rows.results || [] });
+  }
+
+
+  if (path === "/api/v1/payments" && method === "POST") {
+    const siteKey = await siteFromApiKey(request, env.DB);
+    if (!siteKey) return json({ error: "invalid_site_api_key" }, 401);
+    const payload = await body(request);
+    const productId = String(payload?.product_id || "");
+    const product = await env.DB.prepare("SELECT id,site_id,name,amount_minor,currency,status FROM products WHERE id=? AND site_id=? AND status='active'").bind(productId, siteKey.site_id).first();
+    if (!product) return json({ error: "product_not_found" }, 404);
+    const externalOrderNo = String(payload?.external_order_no || "").slice(0, 100);
+    if (!externalOrderNo) return json({ error: "external_order_no_required" }, 400);
+    const existing = await env.DB.prepare("SELECT order_no,status FROM orders WHERE site_id=? AND external_order_no=?").bind(siteKey.site_id, externalOrderNo).first();
+    if (existing) return json({ error: "external_order_no_already_used", order: existing }, 409);
+    const orderId = randomId(16);
+    const orderNo = "QT" + Date.now().toString() + randomId(5).toUpperCase();
+    const paymentId = randomId(16);
+    const notifyUrl = "https://pay.lynli.me/api/alipay/notify";
+    await env.DB.prepare("INSERT INTO orders(id,site_id,order_no,external_order_no,product_id,buyer_ref,buyer_email,amount_minor,currency,status,subject,notify_url,return_url,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,'pending',?,?,?,?)")
+      .bind(orderId, siteKey.site_id, orderNo, externalOrderNo, product.id, String(payload?.buyer_ref || "").slice(0,160) || null, String(payload?.buyer_email || "").slice(0,254) || null, product.amount_minor, product.currency, product.name, notifyUrl, null, JSON.stringify(payload?.metadata || {})).run();
+    await env.DB.prepare("INSERT INTO payments(id,site_id,order_id,channel,channel_out_trade_no,amount_minor,status) VALUES(?,?,?,'alipay',?,?,'processing')")
+      .bind(paymentId, siteKey.site_id, orderId, orderNo, product.amount_minor).run();
+    try {
+      const result = await alipayRequest(env, "alipay.trade.create", { out_trade_no: orderNo, total_amount: amountText(product.amount_minor), subject: product.name.slice(0,128), product_code: "JSAPI", buyer_id: String(payload?.buyer_id || "") }, notifyUrl);
+      await env.DB.prepare("UPDATE payments SET status='created',channel_trade_no=?,channel_response_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(result.trade_no || null, JSON.stringify(result), paymentId).run();
+      return json({ order_no: orderNo, trade_no: result.trade_no, status: "pending", payment_method: "alipay_jsapi", invoke: { tradeNO: result.trade_no } }, 201);
+    } catch (error) {
+      await env.DB.prepare("UPDATE payments SET status='failed',channel_response_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(JSON.stringify({ error: String(error?.message || error) }), paymentId).run();
+      await env.DB.prepare("UPDATE orders SET status='failed',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(orderId).run();
+      return json({ error: "alipay_create_failed", detail: String(error?.message || error) }, 502);
+    }
+  }
+
+  if (path === "/api/alipay/notify" && method === "POST") {
+    const form = await request.formData();
+    const params = {};
+    for (const [key, value] of form.entries()) if (typeof value === "string") params[key] = value;
+    if (!(await verifyAlipayNotify(env, params))) return new Response("failure", { status: 400, headers: { "content-type": "text/plain" } });
+    const order = await env.DB.prepare("SELECT o.*,p.id AS payment_id,p.amount_minor AS payment_amount FROM orders o JOIN payments p ON p.order_id=o.id WHERE o.order_no=? AND p.channel='alipay' LIMIT 1").bind(params.out_trade_no).first();
+    if (!order || Number(order.payment_amount) !== Math.round(Number(params.total_amount) * 100) || params.app_id !== env.ALIPAY_APP_ID) return new Response("failure", { status: 400, headers: { "content-type": "text/plain" } });
+    if (params.trade_status === "TRADE_SUCCESS" || params.trade_status === "TRADE_FINISHED") {
+      await env.DB.prepare("UPDATE payments SET status='succeeded',channel_trade_no=?,notified_at=CURRENT_TIMESTAMP,paid_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status!='succeeded'").bind(params.trade_no || null, order.payment_id).run();
+      await env.DB.prepare("UPDATE orders SET status='paid',paid_at=COALESCE(paid_at,CURRENT_TIMESTAMP),updated_at=CURRENT_TIMESTAMP WHERE id=? AND status!='paid'").bind(order.id).run();
+      await runDelivery(env.DB, env, order.id);
+    } else if (params.trade_status === "TRADE_CLOSED") {
+      await env.DB.prepare("UPDATE payments SET status='closed',notified_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status!='succeeded'").bind(order.payment_id).run();
+      await env.DB.prepare("UPDATE orders SET status='closed',updated_at=CURRENT_TIMESTAMP WHERE id=? AND status='pending'").bind(order.id).run();
+    }
+    return new Response("success", { status: 200, headers: { "content-type": "text/plain" } });
+  }
+
+  if (path.startsWith("/api/v1/orders/") && method === "GET") {
+    const siteKey = await siteFromApiKey(request, env.DB);
+    if (!siteKey) return json({ error: "invalid_site_api_key" }, 401);
+    const orderNo = decodeURIComponent(path.slice("/api/v1/orders/".length));
+    const order = await env.DB.prepare("SELECT order_no,external_order_no,status,amount_minor,currency,created_at,paid_at FROM orders WHERE order_no=? AND site_id=?").bind(orderNo, siteKey.site_id).first();
+    return order ? json({ order }) : json({ error: "order_not_found" }, 404);
+  }
+
+  if (path === "/api/payments" && method === "GET") {
+    const rows = await env.DB.prepare("SELECT p.id,p.site_id,s.name AS site_name,o.order_no,p.channel,p.channel_trade_no,p.amount_minor,o.currency,p.status,p.paid_at,p.created_at FROM payments p JOIN orders o ON o.id=p.order_id JOIN business_sites s ON s.id=p.site_id ORDER BY p.created_at DESC LIMIT 200").all();
+    return json({ items: rows.results || [] });
+  }
+  if (path === "/api/refunds" && method === "GET") {
+    const rows = await env.DB.prepare("SELECT r.*,s.name AS site_name,o.order_no FROM refunds r JOIN business_sites s ON s.id=r.site_id JOIN orders o ON o.id=r.order_id ORDER BY r.created_at DESC LIMIT 200").all();
+    return json({ items: rows.results || [] });
+  }
+  if (path === "/api/refunds" && method === "POST") {
+    const payload = await body(request);
+    const order = await env.DB.prepare("SELECT o.*,p.id AS payment_id,p.channel_out_trade_no FROM orders o JOIN payments p ON p.order_id=o.id WHERE o.id=? AND o.status='paid' AND p.status='succeeded'").bind(String(payload?.order_id || "")).first();
+    const amount = Number(payload?.amount_minor ?? order?.amount_minor);
+    if (!order || !Number.isSafeInteger(amount) || amount <= 0 || amount > order.amount_minor) return json({ error: "invalid_refund" }, 400);
+    const refundId = randomId(16), refundNo = "RF" + Date.now() + randomId(5).toUpperCase();
+    await env.DB.prepare("INSERT INTO refunds(id,site_id,order_id,payment_id,refund_no,amount_minor,reason,status,requested_by) VALUES(?,?,?,?,?,?,?,'processing',?)")
+      .bind(refundId, order.site_id, order.id, order.payment_id, refundNo, amount, String(payload?.reason || "").slice(0,256), admin.id).run();
+    try {
+      const result = await alipayRequest(env, "alipay.trade.refund", { out_trade_no: order.order_no, refund_amount: amountText(amount), out_request_no: refundNo, refund_reason: String(payload?.reason || "商户退款").slice(0,256) });
+      await env.DB.prepare("UPDATE refunds SET status='succeeded',channel_refund_no=?,processed_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(result.trade_no || result.out_trade_no || null, refundId).run();
+      if (amount === order.amount_minor) await env.DB.prepare("UPDATE orders SET status='refunded',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(order.id).run();
+      await audit(env.DB, admin.id, "refund.create", "refunds", refundId);
+      return json({ id: refundId, refund_no: refundNo, status: "succeeded", result });
+    } catch (error) {
+      await env.DB.prepare("UPDATE refunds SET status='failed',updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(refundId).run();
+      return json({ error: "alipay_refund_failed", detail: String(error?.message || error) }, 502);
+    }
+  }
+  if (path === "/api/deliveries" && method === "GET") {
+    const rows = await env.DB.prepare("SELECT d.*,s.name AS site_name,o.order_no FROM delivery_records d JOIN business_sites s ON s.id=d.site_id JOIN orders o ON o.id=d.order_id ORDER BY d.created_at DESC LIMIT 200").all();
+    return json({ items: rows.results || [] });
+  }
+  if (path.startsWith("/api/deliveries/") && path.endsWith("/retry") && method === "POST") {
+    const id = path.split("/")[3];
+    const task = await env.DB.prepare("SELECT order_id FROM delivery_records WHERE id=? AND status!='succeeded'").bind(id).first();
+    if (!task) return json({ error: "delivery_not_retryable" }, 404);
+    await runDelivery(env.DB, env, task.order_id);
+    const updated = await env.DB.prepare("SELECT status,attempt_count,last_error FROM delivery_records WHERE id=?").bind(id).first();
+    await audit(env.DB, admin.id, "delivery.retry", "delivery_records", id);
+    return json({ id, ...updated });
+  }
+  if (path === "/api/audit-logs" && method === "GET") {
+    const rows = await env.DB.prepare("SELECT l.*,a.email AS actor_email FROM audit_logs l LEFT JOIN admin_accounts a ON a.id=l.actor_admin_id ORDER BY l.created_at DESC LIMIT 300").all();
     return json({ items: rows.results || [] });
   }
 
