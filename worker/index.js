@@ -85,6 +85,7 @@ async function failedAttempt(db, identity) {
 }
 
 async function handle(request, env) {
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-methods": "GET,POST,OPTIONS", "access-control-allow-headers": "Content-Type,X-Bootstrap-Secret", "access-control-max-age": "86400" } });
   if (!env.DB) return json({ error: "database_not_configured" }, 503);
   if (!allowedOrigin(request, env)) return json({ error: "origin_not_allowed" }, 403);
   const url = new URL(request.url);
@@ -105,7 +106,7 @@ async function handle(request, env) {
     if (typeof password !== "string" || password.length < 12 || password.length > 256) return json({ error: "password_must_be_12_to_256_chars" }, 400);
     const hash = await passwordHash(password);
     for (const email of SUPERADMINS) {
-      await env.DB.prepare("UPDATE admin_accounts SET password_hash=?, status='active', updated_at=CURRENT_TIMESTAMP WHERE email=? AND is_protected=1")
+      await env.DB.prepare("UPDATE admin_accounts SET password_hash=?, status='active', updated_at=CURRENT_TIMESTAMP WHERE lower(email)=? AND is_protected=1")
         .bind(hash, email).run();
     }
     await env.DB.prepare("UPDATE system_settings SET setting_value='true', updated_at=CURRENT_TIMESTAMP WHERE setting_key='bootstrap_completed'").run();
@@ -204,7 +205,16 @@ async function handle(request, env) {
 export default {
   async fetch(request, env) {
     try {
-      return await handle(request, env);
+      const response = await handle(request, env);
+      const origin = request.headers.get("Origin");
+      if (origin && origin === env.ADMIN_ORIGIN) {
+        const headers = new Headers(response.headers);
+        headers.set("access-control-allow-origin", origin);
+        headers.set("access-control-allow-credentials", "true");
+        headers.set("vary", "Origin");
+        return new Response(response.body, { status: response.status, statusText: response.statusText, headers });
+      }
+      return response;
     } catch (error) {
       console.error("qingtianpay api error", error?.message || error);
       return json({ error: "internal_error" }, 500);
