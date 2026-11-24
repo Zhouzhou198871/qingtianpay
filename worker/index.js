@@ -4,7 +4,7 @@ const SUPERADMINS = new Set([
   "295297477@qq.com",
   "boss@lynli.me",
 ]);
-const PBKDF2_ITERATIONS = 310000;
+const PBKDF2_ITERATIONS = 600000;
 const SESSION_SECONDS = 60 * 60 * 12;
 
 function json(data, status = 200, headers = {}) {
@@ -14,7 +14,7 @@ function json(data, status = 200, headers = {}) {
   });
 }
 function cookie(name, value, maxAge) {
-  return `${name}=${value}; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=${maxAge}`;
+  return `${name}=${value}; Path=/; HttpOnly; Secure; SameSite=None; Max-Age=${maxAge}`;
 }
 function clearCookie() {
   return "qtp_session=; Path=/; HttpOnly; Secure; SameSite=Strict; Max-Age=0";
