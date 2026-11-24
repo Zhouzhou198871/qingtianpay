@@ -13,10 +13,10 @@ const modules = [
   { key: 'overview', label: '总览', group: '工作台', code: '01', description: '查看支付中心整体运行情况、待处理事项与业务概况。' },
   { key: 'sites', label: '业务网站', group: '业务管理', code: '02', description: '管理接入支付中心的自有网站、站点状态和独立 API 凭证。' },
   { key: 'products', label: '商品管理', group: '业务管理', code: '03', description: '按业务网站管理商品名称、价格、状态和交付规则。' },
-  { key: 'orders', label: '订单管理', group: '交易管理', code: '04', description: '统一查询各业务网站订单，查看订单状态和完整交易信息。' },
-  { key: 'payments', label: '支付记录', group: '交易管理', code: '05', description: '查看支付宝交易流水、支付结果与异步通知处理记录。' },
-  { key: 'refunds', label: '退款管理', group: '交易管理', code: '06', description: '处理退款申请，追踪渠道退款状态与退款结果。' },
-  { key: 'delivery', label: '交付管理', group: '交易管理', code: '07', description: '管理支付成功后的自动交付、失败重试和人工补发记录。' },
+  { key: 'orders', label: '订单管理', group: '交易中心', code: '04', description: '统一查询各业务网站订单，查看订单状态和完整交易信息。' },
+  { key: 'payments', label: '支付记录', group: '交易中心', code: '05', description: '查看支付宝交易流水、支付结果与异步通知处理记录。' },
+  { key: 'refunds', label: '退款管理', group: '交易中心', code: '06', description: '处理退款申请，追踪渠道退款状态与退款结果。' },
+  { key: 'delivery', label: '交付管理', group: '交易中心', code: '07', description: '管理支付成功后的自动交付、失败重试和人工补发记录。' },
   { key: 'revenue', label: '收款统计', group: '财务中心', code: '08', description: '按业务网站和时间查看收款趋势、成功率与退款汇总。' },
   { key: 'ledger', label: '资金流水', group: '财务中心', code: '09', description: '查看收款、退款和渠道流水，支持核对与追踪。' },
   { key: 'admins', label: '管理员管理', group: '系统管理', code: '10', description: '管理超级管理员、后台管理员、角色和模块权限。' },
@@ -110,10 +110,10 @@ function DataModule({ moduleKey }) {
 function Dashboard({ onExit }) {
   const [active, setActive] = useState('overview');
   const current = modules.find(m => m.key === active) || modules[0];
-  const groups = ['工作台', '业务管理', '交易管理', '财务中心', '系统管理', '账户中心'];
+  const groups = ['工作台', '业务管理', '交易中心', '财务中心', '系统管理', '账户中心'];
   return <main className="dashboard">
     <aside className="dash-sidebar"><Brand /><div className="sidebar-divider" /><div className="sidebar-groups">{groups.map(group => <div className="sidebar-group" key={group}><div className="dash-caption">{group}</div>{modules.filter(m => m.group === group).map(item => <button key={item.key} className={active === item.key ? 'dash-nav active' : 'dash-nav'} onClick={() => setActive(item.key)}><span className="nav-code">{item.code}</span>{item.label}</button>)}</div>)}</div><div className="sidebar-bottom"><div className="admin-chip"><span className="admin-avatar">管</span><div><b>管理员工作区</b><small>认证服务接入后显示账号</small></div></div><button className="dash-exit" onClick={onExit}>返回登录页</button></div></aside>
-    <section className="dash-main"><header className="dash-top"><div className="breadcrumb"><span>晴天支付中心</span><i>/</i><b>{current.label}</b></div><div className="top-right"><span className="environment-tag">开发环境</span><span className="top-logo">晴</span></div></header>
+    <section className="dash-main"><header className="dash-top"><div className="breadcrumb"><span>晴天支付中心</span><i>/</i><b>{current.label}</b></div><div className="top-right"><span className="environment-tag">开发环境</span><button className="account-menu" onClick={() => setActive('profile')} aria-label="打开个人中心"><span className="top-logo">管</span><span>个人中心</span></button></div></header>
       {active === 'overview' ? <Overview onNavigate={setActive} /> : <DataModule key={active} moduleKey={active} />}
     </section>
   </main>;
