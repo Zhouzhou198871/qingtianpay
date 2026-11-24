@@ -75,7 +75,7 @@ my.tradePay({
 
 `GET /api/v1/orders/{order_no}`
 
-同样使用业务网站的 Bearer API Key。接口只返回该 API Key 所属网站的订单，不允许跨站点读取。
+同样使用业务网站的 Bearer API Key。接口只返回该 API Key 所属网站的订单，不允许跨站点读取。对于仍处于 pending 的订单，支付中心会尝试调用支付宝 `alipay.trade.query` 做服务端补偿核对，再返回最新状态。
 
 ## 支付宝异步通知
 
