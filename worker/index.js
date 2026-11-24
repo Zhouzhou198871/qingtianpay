@@ -86,7 +86,7 @@ async function failedAttempt(db, identity) {
 
 
 function pemBytes(value) {
-  const clean = String(value || "").replace(/-----BEGIN [^-]+-----|-----END [^-]+-----|\\s/g, "");
+  const clean = String(value || "").replace(/-----BEGIN [^-]+-----|-----END [^-]+-----|\s/g, "");
   const raw = atob(clean);
   return Uint8Array.from(raw, c => c.charCodeAt(0));
 }
@@ -135,7 +135,7 @@ async function verifyAlipayNotify(env, params) {
 }
 function amountText(minor) { return (minor / 100).toFixed(2); }
 async function siteFromApiKey(request, db) {
-  const token = request.headers.get("Authorization")?.replace(/^Bearer\\s+/i, "");
+  const token = request.headers.get("Authorization")?.replace(/^Bearer\s+/i, "");
   if (!token) return null;
   const row = await db.prepare("SELECT k.id AS key_id,k.site_id FROM site_api_keys k JOIN business_sites s ON s.id=k.site_id WHERE k.secret_hash=? AND k.status='active' AND s.status='active' LIMIT 1").bind(await digest(token)).first();
   if (row) await db.prepare("UPDATE site_api_keys SET last_used_at=CURRENT_TIMESTAMP WHERE id=?").bind(row.key_id).run();
@@ -178,7 +178,7 @@ async function runDelivery(db, env, orderId) {
 }
 
 async function handle(request, env) {
-  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-methods": "GET,POST,OPTIONS", "access-control-allow-headers": "Content-Type,X-Bootstrap-Secret", "access-control-max-age": "86400" } });
+  if (request.method === "OPTIONS") return new Response(null, { status: 204, headers: { "access-control-allow-methods": "GET,POST,PATCH,OPTIONS", "access-control-allow-headers": "Authorization,Content-Type,X-Bootstrap-Secret", "access-control-max-age": "86400" } });
   if (!env.DB) return json({ error: "database_not_configured" }, 503);
   if (!allowedOrigin(request, env)) return json({ error: "origin_not_allowed" }, 403);
   const url = new URL(request.url);
@@ -338,7 +338,7 @@ async function handle(request, env) {
     const email = String(payload?.email || "").trim().toLowerCase();
     const password = String(payload?.password || "");
     const role = ["operator","viewer"].includes(payload?.role) ? payload.role : "operator";
-    if (!/^[^\\s@]+@[^\\s@]+\\.[^\\s@]+$/.test(email) || password.length < 12 || password.length > 256) return json({ error: "invalid_admin" }, 400);
+    if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || password.length > 256) return json({ error: "invalid_admin" }, 400);
     if (SUPERADMINS.has(email)) return json({ error: "protected_superadmin_email" }, 409);
     const id = randomId(16);
     try {
