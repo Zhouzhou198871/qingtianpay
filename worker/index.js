@@ -418,6 +418,16 @@ async function handle(request, env) {
     await audit(env.DB, admin.id, "delivery.retry", "delivery_records", id);
     return json({ id, ...updated });
   }
+
+  if (path === "/api/analytics/revenue" && method === "GET") {
+    const rows = await env.DB.prepare("SELECT date(o.created_at) AS date,s.name AS site_name,COUNT(o.id) AS order_count,SUM(CASE WHEN o.status IN ('paid','refunding','refunded') THEN 1 ELSE 0 END) AS paid_count,COALESCE(SUM(CASE WHEN o.status IN ('paid','refunding','refunded') THEN o.amount_minor ELSE 0 END),0) AS gross_minor,COALESCE((SELECT SUM(r.amount_minor) FROM refunds r WHERE r.site_id=o.site_id AND date(r.created_at)=date(o.created_at) AND r.status='succeeded'),0) AS refund_minor FROM orders o JOIN business_sites s ON s.id=o.site_id GROUP BY date(o.created_at),o.site_id ORDER BY date DESC LIMIT 90").all();
+    return json({ items: (rows.results || []).map(x => ({ ...x, net_minor: Number(x.gross_minor || 0) - Number(x.refund_minor || 0) })) });
+  }
+  if (path === "/api/ledger" && method === "GET") {
+    const rows = await env.DB.prepare("SELECT p.id,p.site_id,s.name AS site_name,o.order_no,'收款' AS type,p.amount_minor,p.channel_trade_no,p.created_at FROM payments p JOIN orders o ON o.id=p.order_id JOIN business_sites s ON s.id=p.site_id WHERE p.status='succeeded' UNION ALL SELECT r.id,r.site_id,s.name AS site_name,o.order_no,'退款' AS type,-r.amount_minor AS amount_minor,p.channel_trade_no,r.created_at FROM refunds r JOIN orders o ON o.id=r.order_id JOIN payments p ON p.id=r.payment_id JOIN business_sites s ON s.id=r.site_id WHERE r.status='succeeded' ORDER BY created_at DESC LIMIT 300").all();
+    return json({ items: rows.results || [] });
+  }
+
   if (path === "/api/audit-logs" && method === "GET") {
     const rows = await env.DB.prepare("SELECT l.*,a.email AS actor_email FROM audit_logs l LEFT JOIN admin_accounts a ON a.id=l.actor_admin_id ORDER BY l.created_at DESC LIMIT 300").all();
     return json({ items: rows.results || [] });
