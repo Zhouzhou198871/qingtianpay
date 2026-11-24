@@ -99,7 +99,7 @@ async function alipayPublicKey(env) {
   return crypto.subtle.importKey("spki", pemBytes(env.ALIPAY_PUBLIC_KEY), { name: "RSASSA-PKCS1-v1_5", hash: "SHA-256" }, false, ["verify"]);
 }
 function alipaySignContent(params) {
-  return Object.keys(params).filter(k => k !== "sign" && params[k] !== undefined && params[k] !== null && params[k] !== "")
+  return Object.keys(params).filter(k => k !== "sign" && k !== "sign_type" && params[k] !== undefined && params[k] !== null && params[k] !== "")
     .sort().map(k => k + "=" + (typeof params[k] === "string" ? params[k] : JSON.stringify(params[k]))).join("&");
 }
 function toBase64(bytes) { let s = ""; for (const b of new Uint8Array(bytes)) s += String.fromCharCode(b); return btoa(s); }
@@ -163,7 +163,8 @@ async function runDelivery(db, env, orderId) {
   }
   const payload = JSON.stringify({ event: "order.paid", order_no: order.order_no, external_order_no: order.external_order_no, site_id: order.site_id, product_id: order.product_id, product_name: order.product_name, amount_minor: order.amount_minor, currency: order.currency, buyer_ref: order.buyer_ref, paid_at: order.paid_at, idempotency_key: idempotencyKey });
   const signature = await signDelivery(env.DELIVERY_SIGNING_SECRET, payload);
-  await db.prepare("UPDATE delivery_records SET status='processing',attempt_count=attempt_count+1,request_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?").bind(payload, task.id).run();
+  const claim = await db.prepare("UPDATE delivery_records SET status='processing',attempt_count=attempt_count+1,request_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('pending','failed')").bind(payload, task.id).run();
+  if (!claim.meta?.changes) return;
   try {
     const response = await fetch(config.url, { method: "POST", headers: { "content-type": "application/json", "x-qingtian-event": "order.paid", "x-qingtian-signature": signature, "idempotency-key": idempotencyKey }, body: payload });
     const responseText = (await response.text()).slice(0, 4000);
@@ -317,6 +318,7 @@ async function handle(request, env) {
     const productId = String(payload?.product_id || "");
     const product = await env.DB.prepare("SELECT id,site_id,name,amount_minor,currency,status FROM products WHERE id=? AND site_id=? AND status='active'").bind(productId, siteKey.site_id).first();
     if (!product) return json({ error: "product_not_found" }, 404);
+    if (!payload?.buyer_id) return json({ error: "buyer_id_required", message: "JSAPI 下单必须传入支付宝授权取得的 buyer_id" }, 400);
     const externalOrderNo = String(payload?.external_order_no || "").slice(0, 100);
     if (!externalOrderNo) return json({ error: "external_order_no_required" }, 400);
     const existing = await env.DB.prepare("SELECT order_no,status FROM orders WHERE site_id=? AND external_order_no=?").bind(siteKey.site_id, externalOrderNo).first();
@@ -378,7 +380,9 @@ async function handle(request, env) {
     const payload = await body(request);
     const order = await env.DB.prepare("SELECT o.*,p.id AS payment_id,p.channel_out_trade_no FROM orders o JOIN payments p ON p.order_id=o.id WHERE o.id=? AND o.status='paid' AND p.status='succeeded'").bind(String(payload?.order_id || "")).first();
     const amount = Number(payload?.amount_minor ?? order?.amount_minor);
-    if (!order || !Number.isSafeInteger(amount) || amount <= 0 || amount > order.amount_minor) return json({ error: "invalid_refund" }, 400);
+    const refunded = order ? await env.DB.prepare("SELECT COALESCE(SUM(amount_minor),0) AS total FROM refunds WHERE order_id=? AND status IN ('succeeded','processing')").bind(order.id).first() : null;
+    const remaining = order ? order.amount_minor - Number(refunded?.total || 0) : 0;
+    if (!order || !Number.isSafeInteger(amount) || amount <= 0 || amount > remaining) return json({ error: "invalid_refund" }, 400);
     const refundId = randomId(16), refundNo = "RF" + Date.now() + randomId(5).toUpperCase();
     await env.DB.prepare("INSERT INTO refunds(id,site_id,order_id,payment_id,refund_no,amount_minor,reason,status,requested_by) VALUES(?,?,?,?,?,?,?,'processing',?)")
       .bind(refundId, order.site_id, order.id, order.payment_id, refundNo, amount, String(payload?.reason || "").slice(0,256), admin.id).run();
