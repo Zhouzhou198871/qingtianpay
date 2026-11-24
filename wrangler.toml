@@ -4,10 +4,11 @@ compatibility_date = "2026-11-24"
 workers_dev = true
 
 [vars]
-ADMIN_ORIGIN = "https://zhouzhou198871.github.io"
+ADMIN_ORIGIN = "https://pay.lynli.me"
+ALIPAY_APP_ID = "2021007120687121"
 
 [[d1_databases]]
 binding = "DB"
 database_name = "qingtianpay-db"
-database_id = "REPLACE_WITH_NEW_DATABASE_ID"
+database_id = "c669c051-d2e2-46cb-8356-25a7ba3350ce"
 migrations_dir = "migrations"
