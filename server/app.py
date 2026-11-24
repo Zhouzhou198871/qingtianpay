@@ -345,7 +345,9 @@ async def create_payment(req:FRequest):
         if str(result.get("code","")) != "10000" or not result.get("trade_no"):
             raise RuntimeError("alipay_jsapi_create_rejected")
         trade_no=str(result["trade_no"])
-        response={"order_no":order_no,"status":"pending","payment_method":"alipay_jsapi","invoke":{"tradeNO":trade_no}}
+        entry_url="https://pay.lynli.me/payment/launch?"+urlencode({"order_no":order_no,"trade_no":trade_no})
+        qr_image_url="https://pay-api.lynli.me/api/qr?"+urlencode({"url":entry_url})
+        response={"order_no":order_no,"status":"pending","payment_method":"alipay_jsapi","invoke":{"tradeNO":trade_no},"payment_url":entry_url,"qr_image_url":qr_image_url}
         c.execute("UPDATE payments SET status='created',channel_trade_no=?,channel_response_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",(trade_no,json.dumps({"method":"alipay.trade.create","trade_no":trade_no}),pid)); c.commit()
         c.close(); return response
     except Exception as e:
