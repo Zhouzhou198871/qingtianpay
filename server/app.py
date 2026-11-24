@@ -83,7 +83,7 @@ def alipay_page_url(method,biz,return_url):
     p["sign"]=sign_alipay(p)
     return ALIPAY_GATEWAY+"?"+urlencode(p)
 
-def alipay(method,biz,extra_params=None)
+def alipay(method,biz,extra_params=None):
     if not APP_ID: raise RuntimeError("alipay_app_id_not_configured")
     p={"app_id":APP_ID,"method":method,"format":"JSON","charset":"utf-8","sign_type":"RSA2","timestamp":time.strftime("%Y-%m-%d %H:%M:%S"),"version":"1.0","notify_url":ALIPAY_NOTIFY_URL}
     if biz is not None: p["biz_content"]=json.dumps(biz,ensure_ascii=False,separators=(",",":"))
