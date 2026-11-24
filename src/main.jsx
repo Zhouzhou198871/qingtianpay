@@ -85,7 +85,9 @@ function DataModule({ moduleKey }) {
     refunds: ['refund_no','order_no','site_name','amount_minor','reason','status','created_at'],
     delivery: ['id','order_no','site_name','mode','attempt_count','status','updated_at'],
     admins: ['email','email','role','is_protected','status','last_login_at','created_at'],
-    logs: ['created_at','actor_email','action','resource_type','resource_id','result'],\n    revenue: ['date','site_name','order_count','paid_count','gross_minor','refund_minor','net_minor'],\n    ledger: ['id','site_name','order_no','type','amount_minor','channel_trade_no','created_at'],
+    logs: ['created_at','actor_email','action','resource_type','resource_id','result'],
+    revenue: ['date','site_name','order_count','paid_count','gross_minor','refund_minor','net_minor'],
+    ledger: ['id','site_name','order_no','type','amount_minor','channel_trade_no','created_at'],
   };
   useEffect(() => {
     let alive = true;
@@ -163,10 +165,36 @@ function App() {
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
   const [remember, setRemember] = useState(true);
-  const [workspace, setWorkspace] = useState(false);\n  const [admin, setAdmin] = useState(null);\n  const [busy, setBusy] = useState(false);
+  const [workspace, setWorkspace] = useState(false);
+  const [admin, setAdmin] = useState(null);
+  const [busy, setBusy] = useState(false);
   const [notice, setNotice] = useState('');
-  if (workspace) return <Dashboard onExit={() => setWorkspace(false)} />;
-  function handleSubmit(event) { event.preventDefault(); setNotice('登录认证服务尚未启用，请勿在此输入正式账户密码。'); }
+  useEffect(() => {
+    let alive = true;
+    fetch('/api/auth/me', { credentials: 'include' })
+      .then(async response => response.ok ? response.json() : null)
+      .then(data => { if (alive && data?.admin) { setAdmin(data.admin); setWorkspace(true); } })
+      .catch(() => {});
+    return () => { alive = false; };
+  }, []);
+  if (workspace) return <Dashboard admin={admin} onExit={async () => {
+    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
+    setAdmin(null); setWorkspace(false);
+  }} />;
+  async function handleSubmit(event) {
+    event.preventDefault(); setNotice(''); setBusy(true);
+    try {
+      const response = await fetch('/api/auth/login', {
+        method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'include',
+        body: JSON.stringify({ email: account, password })
+      });
+      const data = await response.json().catch(() => ({}));
+      if (!response.ok) throw new Error(data.error === 'too_many_attempts' ? '登录尝试过多，请稍后再试。' : '账号或密码不正确，或账号尚未初始化。');
+      setAdmin(data.admin); setPassword(''); setWorkspace(true);
+    } catch (error) {
+      setNotice(error.message || '登录服务暂时不可用，请稍后重试。');
+    } finally { setBusy(false); }
+  }
   return <main className="page-shell">
     <section className="visual-panel" aria-label="品牌介绍">
       <div className="visual-top"><Brand /></div>
