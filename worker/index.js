@@ -251,7 +251,10 @@ async function handle(request, env) {
 
   const admin = await currentAdmin(request, env);
   if (!admin) return json({ error: "unauthorized" }, 401);
-
+  // Viewer accounts are strictly read-only; allow only their own password change.
+  if (admin.role === "viewer" && method !== "GET" && path !== "/api/auth/change-password") {
+    return json({ error: "read_only_role" }, 403);
+  }
 
   if (path.startsWith("/api/sites/") && path.endsWith("/api-keys") && method === "POST") {
     const siteId = path.split("/")[3];
@@ -306,7 +309,7 @@ async function handle(request, env) {
     const siteId = String(payload?.site_id || "");
     const name = String(payload?.name || "").trim();
     const amount = Number(payload?.amount_minor);
-    if (!siteId || !name || !Number.isSafeInteger(amount) || amount < 0) return json({ error: "invalid_product" }, 400);
+    if (!siteId || !name || !Number.isSafeInteger(amount) || amount <= 0) return json({ error: "invalid_product" }, 400);
     const site = await env.DB.prepare("SELECT id FROM business_sites WHERE id=? AND status='active'").bind(siteId).first();
     if (!site) return json({ error: "site_not_found" }, 404);
     const id = randomId(16);
@@ -337,7 +340,8 @@ async function handle(request, env) {
     const payload = await body(request);
     const email = String(payload?.email || "").trim().toLowerCase();
     const password = String(payload?.password || "");
-    const role = ["operator","viewer"].includes(payload?.role) ? payload.role : "operator";
+    const role = String(payload?.role || "operator");
+    if (!["operator", "viewer"].includes(role)) return json({ error: "invalid_admin_role" }, 400);
     if (!/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(email) || password.length < 12 || password.length > 256) return json({ error: "invalid_admin" }, 400);
     if (SUPERADMINS.has(email)) return json({ error: "protected_superadmin_email" }, 409);
     const id = randomId(16);
@@ -492,12 +496,27 @@ async function handle(request, env) {
   }
   if (path.startsWith("/api/deliveries/") && path.endsWith("/retry") && method === "POST") {
     const id = path.split("/")[3];
-    const task = await env.DB.prepare("SELECT order_id FROM delivery_records WHERE id=? AND status!='succeeded'").bind(id).first();
+    const task = await env.DB.prepare("SELECT order_id FROM delivery_records WHERE id=? AND status IN ('pending','failed')").bind(id).first();
     if (!task) return json({ error: "delivery_not_retryable" }, 404);
     await runDelivery(env.DB, env, task.order_id);
     const updated = await env.DB.prepare("SELECT status,attempt_count,last_error FROM delivery_records WHERE id=?").bind(id).first();
     await audit(env.DB, admin.id, "delivery.retry", "delivery_records", id);
     return json({ id, ...updated });
+  }
+  if (path.startsWith("/api/deliveries/") && path.endsWith("/complete") && method === "POST") {
+    const id = path.split("/")[3];
+    const task = await env.DB.prepare(
+      "SELECT d.id,d.order_id,d.mode,d.status,o.status AS order_status FROM delivery_records d JOIN orders o ON o.id=d.order_id WHERE d.id=?"
+    ).bind(id).first();
+    if (!task || task.order_status !== "paid" || !["manual","internal"].includes(task.mode) || !["pending","failed"].includes(task.status)) {
+      return json({ error: "delivery_not_completable" }, 409);
+    }
+    const changed = await env.DB.prepare(
+      "UPDATE delivery_records SET status='succeeded',last_error=NULL,delivered_at=CURRENT_TIMESTAMP,updated_at=CURRENT_TIMESTAMP WHERE id=? AND status IN ('pending','failed')"
+    ).bind(id).run();
+    if (!changed.meta?.changes) return json({ error: "delivery_already_processed" }, 409);
+    await audit(env.DB, admin.id, "delivery.complete", "delivery_records", id);
+    return json({ id, status: "succeeded" });
   }
 
   if (path === "/api/analytics/revenue" && method === "GET") {
