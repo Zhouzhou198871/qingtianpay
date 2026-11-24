@@ -305,6 +305,38 @@ function Dashboard({ onExit, admin }) {
   </main>;
 }
 
+function PaymentLaunch() {
+  const params = new URLSearchParams(window.location.search);
+  const orderNo = params.get('order_no') || '';
+  const tradeNO = params.get('trade_no') || '';
+  const [state, setState] = useState('正在检查支付宝支付环境…');
+  const [started, setStarted] = useState(false);
+  useEffect(() => {
+    if (!tradeNO || !orderNo) { setState('付款链接无效，请返回商家重新获取二维码。'); return; }
+    let done = false;
+    const launch = () => {
+      if (done || !window.AlipayJSBridge) return;
+      done = true;
+      setStarted(true);
+      window.AlipayJSBridge.call('tradePay', { tradeNO }, result => {
+        const code = String(result?.resultCode || '');
+        if (code === '9000') setState('已提交支付，请等待服务器确认到账。');
+        else if (code === '8000') setState('支付处理中，请勿重复付款。');
+        else if (code === '6001') setState('你已取消支付。');
+        else setState('支付宝返回支付结果（' + (code || '未知') + '），请以订单状态为准。');
+      });
+    };
+    if (window.AlipayJSBridge) launch();
+    else document.addEventListener('AlipayJSBridgeReady', launch, { once: true });
+    const fallback = window.setTimeout(() => {
+      if (!done) setState('当前环境未检测到支付宝支付组件。请使用支付宝扫一扫打开此二维码。');
+    }, 1800);
+    return () => { done = true; window.clearTimeout(fallback); document.removeEventListener('AlipayJSBridgeReady', launch); };
+  }, [tradeNO, orderNo]);
+  if (window.location.pathname === '/payment/launch') return <PaymentLaunch />;
+  return <main className="page-shell"><section className="login-panel" style={{minHeight:'100vh',justifyContent:'center'}}><div className="login-card"><div className="login-heading"><div className="welcome-tag">QINGTIAN PAYMENT</div><h2>支付宝订单付款</h2><p>订单号：{orderNo || '—'}</p></div><p className="notice" role="status">{state}</p>{!started && <p className="secure-note">请确认通过支付宝扫一扫打开此付款二维码。</p>}</div></section></main>;
+}
+
 function App() {
   const [account, setAccount] = useState('');
   const [password, setPassword] = useState('');
