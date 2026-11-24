@@ -45,6 +45,7 @@ def init_db():
     for f in ("0001_initial_schema.sql","0002_security_bootstrap.sql","0003_refund_concurrency_guard.sql"):
         p=os.path.join(ROOT,"migrations",f)
         if os.path.exists(p): c.executescript(open(p).read())
+    c.execute("CREATE TABLE IF NOT EXISTS payment_checkout_sessions (id TEXT PRIMARY KEY, order_id TEXT NOT NULL UNIQUE REFERENCES orders(id), token_hash TEXT NOT NULL UNIQUE, expires_at TEXT NOT NULL, used_at TEXT, created_at TEXT NOT NULL DEFAULT CURRENT_TIMESTAMP)")
     c.commit(); c.close()
 def audit(c, actor, action, typ=None, rid=None, result="success", detail=None):
     c.execute("INSERT INTO audit_logs(id,actor_admin_id,action,resource_type,resource_id,result,detail_json) VALUES(?,?,?,?,?,?,?)",(uid(),actor,action,typ,rid,result,json.dumps(detail or {},ensure_ascii=False)))
@@ -82,9 +83,11 @@ def alipay_page_url(method,biz,return_url):
     p["sign"]=sign_alipay(p)
     return ALIPAY_GATEWAY+"?"+urlencode(p)
 
-def alipay(method,biz):
+def alipay(method,biz,extra_params=None)
     if not APP_ID: raise RuntimeError("alipay_app_id_not_configured")
-    p={"app_id":APP_ID,"method":method,"format":"JSON","charset":"utf-8","sign_type":"RSA2","timestamp":time.strftime("%Y-%m-%d %H:%M:%S"),"version":"1.0","notify_url":ALIPAY_NOTIFY_URL,"biz_content":json.dumps(biz,ensure_ascii=False,separators=(",",":"))}
+    p={"app_id":APP_ID,"method":method,"format":"JSON","charset":"utf-8","sign_type":"RSA2","timestamp":time.strftime("%Y-%m-%d %H:%M:%S"),"version":"1.0","notify_url":ALIPAY_NOTIFY_URL}
+    if biz is not None: p["biz_content"]=json.dumps(biz,ensure_ascii=False,separators=(",",":"))
+    if extra_params: p.update(extra_params)
     p["sign"]=sign_alipay(p)
     req=Request(ALIPAY_GATEWAY,data=urlencode(p).encode(),headers={"Content-Type":"application/x-www-form-urlencoded;charset=utf-8"},method="POST")
     with build_opener(HTTPHandler,NoRedirect()).open(req,timeout=20) as res: raw=res.read(2_000_000)
@@ -164,10 +167,14 @@ def payment_qr(url: str):
     if not url or len(url) > 2048:
         raise HTTPException(400, "invalid_qr_url")
     parsed = urlsplit(url)
-    if parsed.scheme != "https" or parsed.hostname != "pay.lynli.me" or parsed.username or parsed.password:
+    if parsed.scheme != "https" or parsed.hostname not in ("pay.lynli.me", "pay-api.lynli.me") or parsed.username or parsed.password:
         raise HTTPException(400, "qr_url_must_be_first_party_https")
-    if parsed.path != "/payment/launch":
-        raise HTTPException(400, "qr_url_must_be_payment_launch")
+    if parsed.hostname == "pay-api.lynli.me":
+        if not parsed.path.startswith("/api/checkout/"): raise HTTPException(400, "qr_url_must_be_checkout")
+    elif parsed.hostname == "pay.lynli.me":
+        if parsed.path != "/payment/launch": raise HTTPException(400, "qr_url_must_be_payment_launch")
+    else:
+        raise HTTPException(400, "qr_url_host_not_allowed")
     qr = qrcode.QRCode(version=None, error_correction=qrcode.constants.ERROR_CORRECT_M, box_size=8, border=4)
     qr.add_data(url)
     qr.make(fit=True)
@@ -337,9 +344,7 @@ async def create_payment(req:FRequest):
     method=str(b.get("payment_method","alipay_jsapi")).strip().lower()
     if method != "alipay_jsapi":
         c.close(); raise HTTPException(400,"unsupported_payment_method_jsapi_only")
-    buyer=str(b.get("buyer_id","")).strip()
-    if not buyer:
-        c.close(); raise HTTPException(400,"alipay_buyer_id_required")
+    # Buyer identity is obtained from Alipay OAuth after the customer scans the checkout QR.
     if not ext:
         c.close(); raise HTTPException(400,"external_order_no_required")
     old=c.execute("SELECT order_no,status FROM orders WHERE site_id=? AND external_order_no=?",(k["site_id"],ext)).fetchone()
@@ -347,30 +352,53 @@ async def create_payment(req:FRequest):
     oid=uid(); order_no="QT"+time.strftime("%y%m%d%H%M%S")+secrets.token_hex(4).upper(); pid=uid()
     c.execute("INSERT INTO orders(id,site_id,order_no,external_order_no,product_id,buyer_ref,buyer_email,amount_minor,currency,status,subject,metadata_json) VALUES(?,?,?,?,?,?,?,?,?,'pending',?,?)",(oid,k["site_id"],order_no,ext,product["id"],b.get("buyer_ref"),b.get("buyer_email"),product["amount_minor"],product["currency"],product["name"],json.dumps(b.get("metadata") or {})))
     c.execute("INSERT INTO payments(id,site_id,order_id,channel,channel_out_trade_no,amount_minor,status) VALUES(?,?,?,'alipay',?,?,'processing')",(pid,k["site_id"],oid,order_no,product["amount_minor"])); c.commit()
+    checkout_token=secrets.token_urlsafe(32)
+    c.execute("INSERT INTO payment_checkout_sessions(id,order_id,token_hash,expires_at) VALUES(?,?,?,datetime('now','+15 minutes'))",(uid(),oid,digest(checkout_token)))
+    c.execute("UPDATE payments SET status='created',channel_response_json=? WHERE id=?",(json.dumps({"method":"alipay_jsapi_oauth_pending"}),pid))
+    c.commit(); c.close()
+    checkout_url="https://pay-api.lynli.me/api/checkout/"+checkout_token
+    qr_image_url="https://pay-api.lynli.me/api/qr?"+urlencode({"url":checkout_url})
+    return {"order_no":order_no,"status":"pending","payment_method":"alipay_jsapi","checkout_url":checkout_url,"qr_image_url":qr_image_url,"expires_in":900}
+@app.get("/api/checkout/{token}")
+def checkout_start(token:str):
+    c=db()
+    x=c.execute("SELECT s.expires_at,s.used_at,o.order_no,o.status FROM payment_checkout_sessions s JOIN orders o ON o.id=s.order_id WHERE s.token_hash=? AND s.expires_at>CURRENT_TIMESTAMP",(digest(token),)).fetchone()
+    if not x or x["used_at"]:
+        c.close(); raise HTTPException(410,"checkout_link_expired_or_used")
+    if x["status"]!="pending":
+        c.close(); raise HTTPException(409,"order_not_payable")
+    c.close()
+    callback="https://pay-api.lynli.me/api/alipay/oauth/callback"
+    authorize="https://openauth.alipay.com/oauth2/publicAppAuthorize.htm?"+urlencode({"app_id":APP_ID,"scope":"auth_base","redirect_uri":callback,"state":token})
+    return Response(status_code=302,headers={"Location":authorize})
+
+@app.get("/api/alipay/oauth/callback")
+def alipay_oauth_callback(auth_code:str="",state:str=""):
+    if not auth_code or not state: raise HTTPException(400,"alipay_authorization_missing")
+    c=db()
+    x=c.execute("SELECT s.id session_id,s.order_id,o.order_no,o.subject,o.amount_minor,o.status,p.id payment_id FROM payment_checkout_sessions s JOIN orders o ON o.id=s.order_id JOIN payments p ON p.order_id=o.id WHERE s.token_hash=? AND s.used_at IS NULL AND s.expires_at>CURRENT_TIMESTAMP",(digest(state),)).fetchone()
+    if not x or x["status"]!="pending":
+        c.close(); raise HTTPException(410,"checkout_link_expired_or_used")
+    claimed=c.execute("UPDATE payment_checkout_sessions SET used_at=CURRENT_TIMESTAMP WHERE id=? AND used_at IS NULL",(x["session_id"],))
+    if claimed.rowcount!=1:
+        c.close(); raise HTTPException(409,"checkout_already_started")
+    c.commit()
     try:
-        amount=f'{(Decimal(product["amount_minor"])/Decimal(100)):.2f}'
-        site=c.execute("SELECT base_url FROM business_sites WHERE id=?",(k["site_id"],)).fetchone()
-        base=(site["base_url"] or "https://pay.lynli.me").rstrip("/")
-        if not base.startswith("https://"): raise RuntimeError("merchant_base_url_https_required")
-        return_url=base+"/payment/result?order_no="+order_no
-        result=alipay("alipay.trade.create",{
-            "out_trade_no":order_no,
-            "total_amount":amount,
-            "subject":product["name"],
-            "buyer_id":buyer,
-            "product_code":"JSAPI_PAY",
-            "timeout_express":"15m"
-        })
-        if str(result.get("code","")) != "10000" or not result.get("trade_no"):
-            raise RuntimeError("alipay_jsapi_create_rejected")
-        trade_no=str(result["trade_no"])
-        entry_url="https://pay.lynli.me/payment/launch?"+urlencode({"order_no":order_no,"trade_no":trade_no})
-        qr_image_url="https://pay-api.lynli.me/api/qr?"+urlencode({"url":entry_url})
-        response={"order_no":order_no,"status":"pending","payment_method":"alipay_jsapi","invoke":{"tradeNO":trade_no},"payment_url":entry_url,"qr_image_url":qr_image_url}
-        c.execute("UPDATE payments SET status='created',channel_trade_no=?,channel_response_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",(trade_no,json.dumps({"method":"alipay.trade.create","trade_no":trade_no}),pid)); c.commit()
-        c.close(); return response
-    except Exception as e:
-        c.execute("UPDATE payments SET status='failed',channel_response_json=? WHERE id=?",(json.dumps({"error":str(e)}),pid)); c.execute("UPDATE orders SET status='failed' WHERE id=?",(oid,)); c.commit(); c.close(); raise HTTPException(502,"alipay_create_failed")
+        oauth=alipay("alipay.system.oauth.token",None,{"grant_type":"authorization_code","code":auth_code})
+        buyer_id=str(oauth.get("user_id") or "")
+        if not buyer_id: raise RuntimeError("alipay_oauth_user_id_missing")
+        amount=f'{(Decimal(x["amount_minor"])/Decimal(100)):.2f}'
+        result=alipay("alipay.trade.create",{"out_trade_no":x["order_no"],"total_amount":amount,"subject":x["subject"],"buyer_id":buyer_id,"product_code":"JSAPI_PAY","timeout_express":"15m"})
+        trade_no=str(result.get("trade_no") or "")
+        if not trade_no: raise RuntimeError("alipay_jsapi_trade_no_missing")
+        c.execute("UPDATE payments SET status='created',channel_trade_no=?,channel_response_json=?,updated_at=CURRENT_TIMESTAMP WHERE id=?",(trade_no,json.dumps({"method":"alipay.trade.create","trade_no":trade_no}),x["payment_id"]))
+        c.commit(); c.close()
+        launch="https://pay.lynli.me/payment/launch?"+urlencode({"order_no":x["order_no"],"trade_no":trade_no})
+        return Response(status_code=302,headers={"Location":launch})
+    except Exception:
+        c.close()
+        raise HTTPException(502,"alipay_authorize_or_trade_create_failed")
+
 @app.post("/api/alipay/notify")
 async def alipay_notify(req:FRequest):
     form=await req.form(); p={k:str(v) for k,v in form.items()}
