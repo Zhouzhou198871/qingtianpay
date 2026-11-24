@@ -17,8 +17,13 @@ const modules = [
   { key: 'payments', label: '支付记录', group: '交易管理', code: '05', description: '查看支付宝交易流水、支付结果与异步通知处理记录。' },
   { key: 'refunds', label: '退款管理', group: '交易管理', code: '06', description: '处理退款申请，追踪渠道退款状态与退款结果。' },
   { key: 'delivery', label: '交付管理', group: '交易管理', code: '07', description: '管理支付成功后的自动交付、失败重试和人工补发记录。' },
-  { key: 'admins', label: '管理员', group: '系统管理', code: '08', description: '管理超级管理员、后台角色、登录会话和账号安全。' },
-  { key: 'settings', label: '系统设置', group: '系统管理', code: '09', description: '配置支付渠道、系统参数、安全策略和操作审计。' },
+  { key: 'revenue', label: '收款统计', group: '财务中心', code: '08', description: '按业务网站和时间查看收款趋势、成功率与退款汇总。' },
+  { key: 'ledger', label: '资金流水', group: '财务中心', code: '09', description: '查看收款、退款和渠道流水，支持核对与追踪。' },
+  { key: 'admins', label: '管理员管理', group: '系统管理', code: '10', description: '管理超级管理员、后台管理员、角色和模块权限。' },
+  { key: 'security', label: '安全设置', group: '系统管理', code: '11', description: '管理登录保护、会话安全、密码策略和 API 安全。' },
+  { key: 'logs', label: '操作日志', group: '系统管理', code: '12', description: '追踪管理员操作、变更内容、执行结果和时间。' },
+  { key: 'settings', label: '系统设置', group: '系统管理', code: '13', description: '配置支付宝渠道参数和支付中心系统选项。' },
+  { key: 'profile', label: '个人中心', group: '账户中心', code: '14', description: '管理当前登录账号的个人资料、密码和登录会话。' },
 ];
 
 const moduleData = {
@@ -28,7 +33,11 @@ const moduleData = {
   payments: { title: '支付记录', eyebrow: 'PAYMENT TRANSACTIONS', action: '', columns: ['支付流水号', '订单编号', '所属网站', '支付渠道', '支付金额', '支付状态', '支付时间'], empty: '暂无支付流水', note: '首期接入支付宝官方接口。异步通知验签、主动查询补偿和幂等处理将在服务端实现。' },
   refunds: { title: '退款管理', eyebrow: 'REFUNDS', action: '', columns: ['退款单号', '原订单号', '所属网站', '退款金额', '退款原因', '退款状态', '申请时间'], empty: '暂无退款申请', note: '退款状态将与支付宝渠道结果同步，保留每次操作记录和管理员审计信息。' },
   delivery: { title: '交付管理', eyebrow: 'FULFILLMENT', action: '', columns: ['交付编号', '订单编号', '所属网站', '交付方式', '尝试次数', '交付状态', '最近执行时间'], empty: '暂无交付任务', note: '交付任务使用幂等键，支持失败重试与人工补发，避免重复交付。' },
-  admins: { title: '管理员', eyebrow: 'ADMINISTRATION', action: '添加管理员', columns: ['管理员账号', '角色', '账号状态', '最近登录', '创建时间'], empty: '管理员数据尚未初始化', note: '三个指定邮箱将作为受保护的超级管理员。密码只保存安全哈希，不写入代码或明文数据库字段。' },
+  admins: { title: '管理员管理', eyebrow: 'ADMINISTRATION', action: '添加管理员', columns: ['管理员账号', '管理员名称', '角色', '模块权限', '账号状态', '最近登录', '创建时间'], empty: '管理员数据尚未初始化', note: '三个指定邮箱将作为受保护的超级管理员。可在此管理其他管理员、角色授权、账号启停和登录记录。密码只保存安全哈希，不写入代码或明文数据库字段。' },
+  revenue: { title: '收款统计', eyebrow: 'REVENUE ANALYTICS', action: '', columns: ['统计日期', '所属网站', '订单总数', '支付成功', '收款金额', '退款金额', '净收款'], empty: '暂无收款统计', note: '统计数据以真实支付记录为基础，支持按网站和日期汇总，不展示模拟金额。' },
+  ledger: { title: '资金流水', eyebrow: 'FINANCIAL LEDGER', action: '', columns: ['流水编号', '所属网站', '关联订单', '流水类型', '发生金额', '渠道交易号', '发生时间'], empty: '暂无资金流水', note: '收款和退款流水分别记录，保留渠道交易号与关联订单，便于核对追踪。' },
+  security: { title: '安全设置', eyebrow: 'SECURITY CENTER', action: '', columns: [], empty: '', note: '' },
+  logs: { title: '操作日志', eyebrow: 'AUDIT LOGS', action: '', columns: ['操作时间', '管理员', '操作模块', '操作内容', '来源 IP', '执行结果'], empty: '暂无操作记录', note: '记录关键配置变更、管理员操作、支付处理和权限调整，日志不允许普通管理员修改。' },
   settings: { title: '系统设置', eyebrow: 'SYSTEM CONFIGURATION', action: '', columns: [], empty: '', note: '' },
 };
 
@@ -63,6 +72,24 @@ function DataModule({ moduleKey }) {
   const data = moduleData[moduleKey];
   const [search, setSearch] = useState('');
   const [status, setStatus] = useState('all');
+  if (moduleKey === 'profile') return <div className="workspace-page">
+    <div className="page-intro"><div><div className="page-eyebrow">MY ACCOUNT</div><h1>个人中心</h1><p>管理当前登录账号的资料、安全凭证和登录状态。</p></div></div>
+    <div className="settings-grid">
+      <section className="workspace-card settings-card"><span className="section-kicker">ACCOUNT PROFILE</span><h2>个人资料</h2><p>认证服务接入后显示当前管理员邮箱、账号名称、所属角色和账号创建时间。个人资料修改将保留变更记录。</p><div className="setting-bottom"><span className="soft-tag">等待登录认证</span><span>账号信息</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">PASSWORD & SECURITY</span><h2>密码与安全</h2><p>支持修改登录密码、查看密码更新时间，并对敏感操作执行身份验证。密码仅以安全哈希形式保存。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>安全凭证</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">ACTIVE SESSIONS</span><h2>登录会话</h2><p>查看当前设备和其他已登录设备，支持退出指定会话及全部其他会话。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>设备管理</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">ACCOUNT ACTIVITY</span><h2>账号活动</h2><p>查看最近登录时间、登录来源和安全事件。异常登录将进入安全审计记录。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>登录记录</span></div></section>
+    </div>
+  </div>;
+  if (moduleKey === 'security') return <div className="workspace-page">
+    <div className="page-intro"><div><div className="page-eyebrow">SECURITY CENTER</div><h1>安全设置</h1><p>统一管理后台身份验证、会话和访问保护。</p></div></div>
+    <div className="settings-grid">
+      <section className="workspace-card settings-card"><span className="section-kicker">LOGIN PROTECTION</span><h2>登录保护</h2><p>登录失败限流、异常尝试锁定、管理员登录验证和安全告警。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>身份验证</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">SESSION POLICY</span><h2>会话策略</h2><p>安全 Cookie、会话有效期、闲置超时和远程撤销会话。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>会话管理</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">API CREDENTIALS</span><h2>接口凭证安全</h2><p>API 密钥仅展示一次，数据库只保存摘要，支持轮换与吊销。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>密钥保护</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">SECURITY EVENTS</span><h2>安全事件</h2><p>登录失败、权限拒绝、凭证轮换和敏感配置变更统一记录。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>安全审计</span></div></section>
+    </div>
+  </div>;
   if (moduleKey === 'settings') return <div className="workspace-page">
     <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div></div>
     <div className="settings-grid">
@@ -83,7 +110,7 @@ function DataModule({ moduleKey }) {
 function Dashboard({ onExit }) {
   const [active, setActive] = useState('overview');
   const current = modules.find(m => m.key === active) || modules[0];
-  const groups = ['工作台', '业务管理', '交易管理', '系统管理'];
+  const groups = ['工作台', '业务管理', '交易管理', '财务中心', '系统管理', '账户中心'];
   return <main className="dashboard">
     <aside className="dash-sidebar"><Brand /><div className="sidebar-divider" /><div className="sidebar-groups">{groups.map(group => <div className="sidebar-group" key={group}><div className="dash-caption">{group}</div>{modules.filter(m => m.group === group).map(item => <button key={item.key} className={active === item.key ? 'dash-nav active' : 'dash-nav'} onClick={() => setActive(item.key)}><span className="nav-code">{item.code}</span>{item.label}</button>)}</div>)}</div><div className="sidebar-bottom"><div className="admin-chip"><span className="admin-avatar">管</span><div><b>管理员工作区</b><small>认证服务接入后显示账号</small></div></div><button className="dash-exit" onClick={onExit}>返回登录页</button></div></aside>
     <section className="dash-main"><header className="dash-top"><div className="breadcrumb"><span>晴天支付中心</span><i>/</i><b>{current.label}</b></div><div className="top-right"><span className="environment-tag">开发环境</span><span className="top-logo">晴</span></div></header>
