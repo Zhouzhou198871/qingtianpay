@@ -185,7 +185,12 @@ async function handle(request, env) {
 
   if (path === "/api/health" && method === "GET") {
     const result = await env.DB.prepare("SELECT 1 AS ok").first();
-    return json({ ok: result?.ok === 1, service: "qingtianpay-api", database: "connected" });
+    return json({ ok: result?.ok === 1, service: "qingtianpay-api", database: "connected", alipay: { app_id: Boolean(env.ALIPAY_APP_ID), private_key: Boolean(env.ALIPAY_PRIVATE_KEY), public_key: Boolean(env.ALIPAY_PUBLIC_KEY) } });
+  }
+
+  if (path === "/api/auth/bootstrap-status" && method === "GET") {
+    const state = await env.DB.prepare("SELECT setting_value FROM system_settings WHERE setting_key='bootstrap_completed'").first();
+    return json({ required: state?.setting_value !== "true" });
   }
 
   if (path === "/api/auth/bootstrap" && method === "POST") {
