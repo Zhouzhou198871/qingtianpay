@@ -191,7 +191,7 @@ def health():
     return {"ok":True,"service":"qingtianpay-server","database":"connected","alipay":{"app_id":bool(APP_ID),"private_key":os.path.isfile(APP_PRIVATE_KEY_FILE),"public_key":os.path.isfile(ALIPAY_PUBLIC_KEY_FILE),"seller_id":bool(ALIPAY_SELLER_ID),"notify_url":ALIPAY_NOTIFY_URL}}
 @app.get("/api/integration-guide")
 def integration_guide():
-    path=os.path.join(ROOT,"docs","API_INTEGRATION.md")
+    path=os.path.join(ROOT,"docs","API-INTEGRATION.md")
     if not os.path.isfile(path): raise HTTPException(404,"integration_guide_not_found")
     return Response(open(path,"r",encoding="utf-8").read(),media_type="text/markdown; charset=utf-8")
 @app.get("/api/auth/bootstrap-status")
