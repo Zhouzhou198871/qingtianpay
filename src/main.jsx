@@ -2,6 +2,13 @@ import React, { useEffect, useMemo, useState } from 'react';
 import { createRoot } from 'react-dom/client';
 import './style.css';
 
+const API_BASE = 'https://pay-api.lynli.me';
+function apiFetch(input, init = {}) {
+  const target = typeof input === 'string' && input.startsWith('/api/') ? API_BASE + input : input;
+  return apiFetch(target, { ...init, credentials: init.credentials ?? 'include' });
+}
+
+
 function Brand({ compact = false }) {
   return <div className={compact ? 'brand brand-compact' : 'brand'}>
     <img src={`${import.meta.env.BASE_URL}logo.png`} alt="晴天支付中心" />
@@ -52,11 +59,11 @@ function Overview({ onNavigate }) {
     const load = async () => {
       try {
         const [ordersRes, paymentsRes, refundsRes, sitesRes, healthRes] = await Promise.all([
-          fetch('/api/orders', { credentials:'include' }),
-          fetch('/api/payments', { credentials:'include' }),
-          fetch('/api/refunds', { credentials:'include' }),
-          fetch('/api/sites', { credentials:'include' }),
-          fetch('/api/health', { credentials:'include' }),
+          apiFetch('/api/orders', { credentials:'include' }),
+          apiFetch('/api/payments', { credentials:'include' }),
+          apiFetch('/api/refunds', { credentials:'include' }),
+          apiFetch('/api/sites', { credentials:'include' }),
+          apiFetch('/api/health', { credentials:'include' }),
         ]);
         const [ordersData, paymentsData, refundsData, sitesData, healthData] = await Promise.all([
           ordersRes.json(), paymentsRes.json(), refundsRes.json(), sitesRes.json(), healthRes.json(),
@@ -92,9 +99,9 @@ function Overview({ onNavigate }) {
     <div className="overview-columns">
       <section className="workspace-card"><div className="card-heading"><div><span className="section-kicker">SYSTEM STATUS</span><h2>系统接入进度</h2></div><span className="soft-tag">开发中</span></div>
         <div className="status-list">
-          <div className="status-row"><span className="status-mark pending">01</span><div><b>独立数据库</b><small>新建 D1 已创建并完成两份迁移，Worker 健康检查通过</small></div><em>已连接</em></div>
+          <div className="status-row"><span className="status-mark pending">01</span><div><b>独立数据库</b><small>新建 D1 已创建并完成两份迁移，服务器 API 健康检查通过</small></div><em>已连接</em></div>
           <div className="status-row"><span className="status-mark pending">02</span><div><b>管理员认证</b><small>登录、会话和密码哈希接口已部署，等待首次超管初始化</small></div><em>待初始化</em></div>
-          <div className="status-row"><span className="status-mark pending">03</span><div><b>支付宝 JSAPI</b><small>下单、异步通知验签和退款接口已部署，密钥配置与真实联调待完成</small></div><em>待联调</em></div>
+          <div className="status-row"><span className="status-mark pending">03</span><div><b>支付宝 JSAPI</b><small>下单、异步通知验签和退款接口已部署，真实支付联调待完成</small></div><em>待联调</em></div>
           <div className="status-row"><span className="status-mark pending">04</span><div><b>多网站数据隔离</b><small>站点 API Key、订单隔离和 Webhook 交付接口已建立，待接入业务网站</small></div><em>待接入业务</em></div>
         </div>
       </section>
@@ -141,7 +148,7 @@ function DataModule({ moduleKey, admin }) {
     const endpoint = endpoints[moduleKey];
     if (!endpoint) { setItems([]); setLoading(false); return () => { alive = false; }; }
     setLoading(true);
-    fetch(endpoint, { credentials: 'include' }).then(async response => {
+    apiFetch(endpoint, { credentials: 'include' }).then(async response => {
       const payload = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(payload.error || '接口读取失败');
       return payload.items || [];
@@ -149,11 +156,11 @@ function DataModule({ moduleKey, admin }) {
     return () => { alive = false; };
   }, [moduleKey]);
   useEffect(() => {
-    fetch('/api/health', { credentials:'include' }).then(r=>r.json()).then(setHealth).catch(()=>setHealth(null));
+    apiFetch('/api/health', { credentials:'include' }).then(r=>r.json()).then(setHealth).catch(()=>setHealth(null));
   }, []);
   useEffect(() => {
     if (!['products','api'].includes(moduleKey)) return;
-    fetch('/api/sites', { credentials:'include' }).then(r => r.json()).then(data => setSiteOptions(data.items || [])).catch(() => setSiteOptions([]));
+    apiFetch('/api/sites', { credentials:'include' }).then(r => r.json()).then(data => setSiteOptions(data.items || [])).catch(() => setSiteOptions([]));
   }, [moduleKey]);
   async function runRowAction(item) {
     try {
@@ -169,10 +176,10 @@ function DataModule({ moduleKey, admin }) {
         method = 'PATCH';
         payload = { status: item.status === 'disabled' ? 'active' : 'disabled' };
       } else return;
-      const response = await fetch(url, { method, headers:{'content-type':'application/json'}, credentials:'include', body:JSON.stringify(payload) });
+      const response = await apiFetch(url, { method, headers:{'content-type':'application/json'}, credentials:'include', body:JSON.stringify(payload) });
       const result = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(result.error || '操作失败');
-      const refreshed = await fetch(endpoints[moduleKey], { credentials:'include' });
+      const refreshed = await apiFetch(endpoints[moduleKey], { credentials:'include' });
       const data = await refreshed.json().catch(() => ({}));
       setItems(data.items || []);
     } catch (error) { setFormError(error.message || '操作失败'); }
@@ -181,7 +188,7 @@ function DataModule({ moduleKey, admin }) {
     event.preventDefault(); setPasswordNotice('');
     if (newPassword.length < 12) { setPasswordNotice('新密码至少需要 12 位。'); return; }
     try {
-      const response = await fetch('/api/auth/change-password', { method:'POST', headers:{'content-type':'application/json'}, credentials:'include', body:JSON.stringify({ current_password:currentPassword, new_password:newPassword }) });
+      const response = await apiFetch('/api/auth/change-password', { method:'POST', headers:{'content-type':'application/json'}, credentials:'include', body:JSON.stringify({ current_password:currentPassword, new_password:newPassword }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error === 'current_password_incorrect' ? '当前密码不正确。' : (data.error || '密码修改失败'));
       setCurrentPassword(''); setNewPassword(''); setPasswordNotice('密码已更新，其他登录会话已退出。');
@@ -205,13 +212,13 @@ function DataModule({ moduleKey, admin }) {
         payload = { email:form.email, password:form.password, role:form.role };
       }
       if (!endpoint) throw new Error('此模块暂不支持创建');
-      const response = await fetch(endpoint, { method:'POST', headers:{'content-type':'application/json'}, credentials:'include', body:JSON.stringify(payload) });
+      const response = await apiFetch(endpoint, { method:'POST', headers:{'content-type':'application/json'}, credentials:'include', body:JSON.stringify(payload) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error || '创建失败');
       if (moduleKey === 'api') setCreatedKey(data.api_key || '');
       setShowCreate(false);
       setForm({ name:'', slug:'', base_url:'', delivery_mode:'manual', delivery_url:'', site_id:'', amount:'', description:'', delivery_rule:'', label:'', email:'', password:'', role:'operator' });
-      const refreshed = await fetch(endpoints[moduleKey], { credentials:'include' });
+      const refreshed = await apiFetch(endpoints[moduleKey], { credentials:'include' });
       const result = await refreshed.json().catch(() => ({}));
       setItems(result.items || []);
     } catch (error) { setFormError(error.message || '创建失败'); }
@@ -252,7 +259,7 @@ function DataModule({ moduleKey, admin }) {
   if (moduleKey === 'settings') return <div className="workspace-page">
     <div className="page-intro"><div><div className="page-eyebrow">{data.eyebrow}</div><h1>{data.title}</h1><p>{modules.find(m => m.key === moduleKey).description}</p></div></div>
     <div className="settings-grid">
-      <section className="workspace-card settings-card"><span className="section-kicker">PAYMENT CHANNEL</span><h2>支付渠道</h2><p>AppID：{health?.alipay?.app_id ? '已配置' : '未配置'}；应用私钥：{health?.alipay?.private_key ? '已配置' : '未配置'}；支付宝公钥：{health?.alipay?.public_key ? '已配置' : '未配置'}。私钥和公钥只保存在 Cloudflare Worker Secrets。</p><div className="setting-bottom"><span className="soft-tag">{health?.alipay?.private_key && health?.alipay?.public_key ? '密钥已配置' : '待配置密钥'}</span><span>支付宝</span></div></section>
+      <section className="workspace-card settings-card"><span className="section-kicker">PAYMENT CHANNEL</span><h2>支付渠道</h2><p>AppID：{health?.alipay?.app_id ? '已配置' : '未配置'}；应用私钥：{health?.alipay?.private_key ? '已配置' : '未配置'}；支付宝公钥：{health?.alipay?.public_key ? '已配置' : '未配置'}。应用私钥和支付宝公钥保存在服务器受限目录，由独立支付 API 读取。</p><div className="setting-bottom"><span className="soft-tag">{health?.alipay?.private_key && health?.alipay?.public_key ? '密钥已配置' : '待配置密钥'}</span><span>支付宝</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">SECURITY</span><h2>安全策略</h2><p>登录限流、安全会话、管理员权限保护、API 凭证哈希和操作审计。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>访问控制</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">DATA ISOLATION</span><h2>数据隔离</h2><p>每笔业务数据绑定站点上下文。服务端从 API 凭证解析站点身份，不信任客户端传入的站点标识。</p><div className="setting-bottom"><span className="soft-tag">待接入</span><span>站点隔离</span></div></section>
       <section className="workspace-card settings-card"><span className="section-kicker">AUDIT LOG</span><h2>操作审计</h2><p>记录管理员、操作类型、目标资源、执行结果和时间，拒绝与失败操作同样留痕。</p><div className="setting-bottom"><span className="soft-tag">已启用</span><span>审计记录</span></div></section>
@@ -300,8 +307,8 @@ function App() {
   const [notice, setNotice] = useState('');
   useEffect(() => {
     let alive = true;
-    fetch('/api/auth/bootstrap-status', { credentials: 'include' }).then(r => r.json()).then(data => { if (alive) setSetupRequired(Boolean(data.required)); }).catch(() => {});
-    fetch('/api/auth/me', { credentials: 'include' })
+    apiFetch('/api/auth/bootstrap-status', { credentials: 'include' }).then(r => r.json()).then(data => { if (alive) setSetupRequired(Boolean(data.required)); }).catch(() => {});
+    apiFetch('/api/auth/me', { credentials: 'include' })
       .then(async response => response.ok ? response.json() : null)
       .then(data => { if (alive && data?.admin) { setAdmin(data.admin); setWorkspace(true); } })
       .catch(() => {});
@@ -313,7 +320,7 @@ function App() {
     if (initialPassword !== confirmPassword) { setNotice('两次输入的密码不一致。'); return; }
     setBusy(true);
     try {
-      const response = await fetch('/api/auth/bootstrap', { method: 'POST', headers: { 'content-type': 'application/json', 'X-Bootstrap-Secret': setupSecret }, credentials: 'include', body: JSON.stringify({ password: initialPassword }) });
+      const response = await apiFetch('/api/auth/bootstrap', { method: 'POST', headers: { 'content-type': 'application/json', 'X-Bootstrap-Secret': setupSecret }, credentials: 'include', body: JSON.stringify({ password: initialPassword }) });
       const data = await response.json().catch(() => ({}));
       if (!response.ok) throw new Error(data.error === 'forbidden' ? '初始化密钥不正确，请检查 Cloudflare Secret。' : '初始化失败：' + (data.error || response.status));
       setSetupRequired(false); setSetupSecret(''); setInitialPassword(''); setConfirmPassword('');
@@ -323,13 +330,13 @@ function App() {
   }
   if (setupRequired) return <main className="page-shell"><section className="login-panel"><div className="mobile-brand"><Brand compact /></div><div className="login-card"><div className="login-heading"><div className="welcome-tag">FIRST TIME SETUP</div><h2>初始化超级管理员</h2><p>首次使用，请设置三个受保护超级管理员的统一密码。</p></div><form onSubmit={handleBootstrap}><label htmlFor="setupSecret">一次性初始化密钥</label><div className="input-wrap"><input id="setupSecret" type="password" value={setupSecret} onChange={e => setSetupSecret(e.target.value)} autoComplete="off" required /></div><label htmlFor="initialPassword">设置新密码</label><div className="input-wrap"><input id="initialPassword" type="password" value={initialPassword} onChange={e => setInitialPassword(e.target.value)} minLength={12} autoComplete="new-password" required /></div><label htmlFor="confirmPassword">再次确认密码</label><div className="input-wrap"><input id="confirmPassword" type="password" value={confirmPassword} onChange={e => setConfirmPassword(e.target.value)} minLength={12} autoComplete="new-password" required /></div><button className="submit-button" type="submit" disabled={busy}>{busy ? '正在初始化…' : '完成初始化'}</button>{notice && <div className="notice" role="status">{notice}</div>}</form></div></section></main>;
   if (workspace) return <Dashboard admin={admin} onExit={async () => {
-    await fetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
+    await apiFetch('/api/auth/logout', { method: 'POST', credentials: 'include' }).catch(() => {});
     setAdmin(null); setWorkspace(false);
   }} />;
   async function handleSubmit(event) {
     event.preventDefault(); setNotice(''); setBusy(true);
     try {
-      const response = await fetch('/api/auth/login', {
+      const response = await apiFetch('/api/auth/login', {
         method: 'POST', headers: { 'content-type': 'application/json' }, credentials: 'include',
         body: JSON.stringify({ email: account, password })
       });
