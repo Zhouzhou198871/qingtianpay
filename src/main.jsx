@@ -244,6 +244,7 @@ function DataModule({ moduleKey, admin }) {
     if (['amount_minor','gross_minor','refund_minor','net_minor'].includes(field)) return '¥' + (Number(value) / 100).toFixed(2);
     if (field === 'is_protected') return value ? '受保护' : '普通管理员';
     if (field === 'scope') return '仅限所属站点';
+    if (field === 'delivery_mode') return ({ manual: '人工交付', webhook: 'Webhook 自动交付', internal: '内部交付' })[value] || value;
     if (field === 'status') return ({ active: '正常', disabled: '停用', pending: '待处理', paid: '已支付', succeeded: '成功', failed: '失败', processing: '处理中', refunded: '已退款', closed: '已关闭' })[value] || value;
     if (field.endsWith('_at')) return String(value).replace('T',' ').replace('Z','').slice(0,19);
     return String(value);
