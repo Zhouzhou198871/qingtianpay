@@ -112,13 +112,19 @@ Webhook 请求体包含订单号、商品 ID、站点 ID、金额（分）、币
 - `GET,POST /api/products`
 - `POST /api/sites/{site_id}/api-keys`
 - `GET /api/sites/{site_id}/api-keys`
+- `GET /api/api-keys`
+- `POST /api/api-keys/{id}/revoke`
 - `GET /api/orders`
 - `GET /api/payments`
 - `GET,POST /api/refunds`
 - `GET /api/deliveries`
 - `POST /api/deliveries/{id}/retry`
-- `GET /api/admins`
+- `GET,POST /api/admins`
+- `PATCH /api/admins/{id}`
+- `POST /api/auth/change-password`
 - `GET /api/audit-logs`
+- `GET /api/analytics/revenue`
+- `GET /api/ledger`
 
 ## 尚待配置的密钥
 
