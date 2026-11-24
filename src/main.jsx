@@ -39,7 +39,7 @@ const moduleData = {
   products: { title: '商品管理', eyebrow: 'PRODUCT CATALOG', action: '添加商品', columns: ['商品名称', '所属网站', '商品价格', '币种', '交付方式', '状态', '更新时间'], empty: '暂无商品', note: '商品必须归属于一个业务网站。商品价格以人民币分为单位存储，避免浮点金额误差。' },
   api: { title: 'API 接口管理', eyebrow: 'API ACCESS', action: '创建 API 凭证', columns: ['凭证名称', '所属网站', 'Key 前缀', '权限范围', '最近调用', '有效期', '状态', '操作'], empty: '暂无 API 凭证', note: '每个业务网站使用独立 API 凭证。密钥只在创建时展示一次，数据库只保存 SHA-256 摘要；支持轮换、吊销和调用审计。' },
   orders: { title: '订单管理', eyebrow: 'ORDERS', action: '', columns: ['订单编号', '所属网站', '商品 / 订单标题', '订单金额', '买家信息', '订单状态', '创建时间'], empty: '暂无订单记录', note: '订单数据将按站点隔离展示。支付成功状态以服务端验签和渠道查询结果为准。' },
-  payments: { title: '支付记录', eyebrow: 'PAYMENT TRANSACTIONS', action: '', columns: ['支付流水号', '订单编号', '所属网站', '支付渠道', '支付金额', '支付状态', '支付时间'], empty: '暂无支付流水', note: '首期接入支付宝官方接口。服务端已实现异步通知验签、主动查询补偿与订单金额核对。' },
+  payments: { title: '支付记录', eyebrow: 'PAYMENT TRANSACTIONS', action: '', columns: ['支付流水号', '订单编号', '所属网站', '支付渠道', '支付金额', '支付状态', '支付时间'], empty: '暂无支付流水', note: '当前仅按支付宝 JSAPI 方向开发。普通浏览器不能直接调用支付宝 JSAPI；须先确认支付宝小程序或其他受支持的 JSAPI 容器。真实支付、通知与退款仍待端到端验收。' },
   refunds: { title: '退款管理', eyebrow: 'REFUNDS', action: '', columns: ['退款单号', '原订单号', '所属网站', '退款金额', '退款原因', '退款状态', '申请时间', '操作'], empty: '暂无退款申请', note: '退款状态将与支付宝渠道结果同步，保留每次操作记录和管理员审计信息。' },
   delivery: { title: '交付管理', eyebrow: 'FULFILLMENT', action: '', columns: ['交付编号', '订单编号', '所属网站', '交付方式', '尝试次数', '交付状态', '最近执行时间', '操作'], empty: '暂无交付任务', note: 'Webhook 交付支持失败重试；人工和内部交付支持确认完成，所有操作保留审计记录。' },
   admins: { title: '管理员管理', eyebrow: 'ADMINISTRATION', action: '添加管理员', columns: ['管理员账号', '角色', '受保护状态', '账号状态', '最近登录', '创建时间', '操作'], empty: '管理员数据尚未初始化', note: '三个指定邮箱将作为受保护的超级管理员。可在此管理其他管理员、角色授权、账号启停和登录记录。密码只保存安全哈希，不写入代码或明文数据库字段。' },
