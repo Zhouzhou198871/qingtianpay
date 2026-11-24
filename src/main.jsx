@@ -81,7 +81,7 @@ function DataModule({ moduleKey }) {
     sites: ['name','slug','base_url','key_prefix','status','created_at'],
     products: ['name','site_name','amount_minor','currency','delivery_mode','status','updated_at'],
     orders: ['order_no','site_name','subject','amount_minor','buyer_ref','status','created_at'],
-    payments: ['id','order_no','site_name','channel','amount_minor','status','paid_at'],
+    payments: ['channel_trade_no','order_no','site_name','channel','amount_minor','status','paid_at'],
     refunds: ['refund_no','order_no','site_name','amount_minor','reason','status','created_at'],
     delivery: ['id','order_no','site_name','mode','attempt_count','status','updated_at'],
     admins: ['email','email','role','is_protected','status','last_login_at','created_at'],
