@@ -323,6 +323,52 @@ function Dashboard({ onExit, admin }) {
   </main>;
 }
 
+function CheckoutPage() {
+  const token = window.location.pathname.split('/').filter(Boolean)[1] || '';
+  const [order, setOrder] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState('');
+  const [starting, setStarting] = useState(false);
+  useEffect(() => {
+    let alive = true;
+    if (!token || token.length > 256) {
+      setError('付款链接无效，请返回商家重新获取订单。');
+      setLoading(false);
+      return;
+    }
+    apiFetch('/api/checkout/' + encodeURIComponent(token) + '/details', { credentials: 'omit', cache: 'no-store' })
+      .then(async response => {
+        const data = await response.json().catch(() => ({}));
+        if (!response.ok) throw new Error(response.status === 410 ? '付款链接已过期或已使用，请返回商家重新获取。' : response.status === 409 ? '该订单当前不可付款。' : '暂时无法读取订单，请稍后重试。');
+        return data;
+      })
+      .then(data => { if (alive) setOrder(data); })
+      .catch(err => { if (alive) setError(err.message || '订单读取失败。'); })
+      .finally(() => { if (alive) setLoading(false); });
+    return () => { alive = false; };
+  }, [token]);
+  function beginAlipay() {
+    if (!token || starting || !order) return;
+    setStarting(true);
+    window.location.assign(API_BASE + '/api/checkout/' + encodeURIComponent(token) + '/authorize');
+  }
+  const amount = order ? (Number(order.amount_minor) / 100).toFixed(2) : '—';
+  return <main className="page-shell"><section className="login-panel" style={{minHeight:'100vh',justifyContent:'center'}}><div className="login-card">
+    <div className="login-heading"><div className="welcome-tag">QINGTIAN PAYMENT</div><h2>订单收银台</h2><p>请核对订单信息后，使用支付宝完成付款。</p></div>
+    {loading ? <p className="notice" role="status">正在安全读取订单…</p> : error ? <p className="notice" role="alert">{error}</p> : order && <>
+      <div className="checkout-summary" style={{padding:'20px',border:'1px solid var(--line, #e5e7eb)',borderRadius:'14px',margin:'20px 0'}}>
+        <div style={{display:'flex',justifyContent:'space-between',gap:'16px',paddingBottom:'14px'}}><span>商品 / 服务</span><strong style={{textAlign:'right'}}>{order.subject}</strong></div>
+        <div style={{display:'flex',justifyContent:'space-between',gap:'16px',paddingBottom:'14px'}}><span>订单编号</span><strong style={{fontSize:'12px',textAlign:'right',wordBreak:'break-all'}}>{order.order_no}</strong></div>
+        <div style={{borderTop:'1px solid var(--line, #e5e7eb)',paddingTop:'16px',display:'flex',justifyContent:'space-between',alignItems:'center'}}><span>应付金额</span><strong style={{fontSize:'28px',color:'var(--primary, #2563eb)'}}>¥{amount}</strong></div>
+      </div>
+      <button className="submit-button" type="button" onClick={beginAlipay} disabled={starting}>{starting ? '正在前往支付宝…' : '支付宝付款'}</button>
+      <p className="secure-note" style={{marginTop:'16px'}}>支付将通过支付宝官方 JSAPI 完成。请在支付宝授权页面继续操作；支付结果以支付中心服务器确认为准。</p>
+    </>}
+    <div className="login-divider"><span>SECURE CHECKOUT</span></div>
+    <p className="secure-note" style={{textAlign:'center'}}>晴天支付中心 · 安全收银台</p>
+  </div></section></main>;
+}
+
 function PaymentLaunch() {
   const params = new URLSearchParams(window.location.search);
   const orderNo = params.get('order_no') || '';
@@ -424,6 +470,7 @@ function App() {
   const [initialPassword, setInitialPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [notice, setNotice] = useState('');
+  if (window.location.pathname.startsWith('/checkout/')) return <CheckoutPage />;
   useEffect(() => {
     let alive = true;
     apiFetch('/api/auth/bootstrap-status', { credentials: 'include' }).then(r => r.json()).then(data => { if (alive) setSetupRequired(Boolean(data.required)); }).catch(() => {});
