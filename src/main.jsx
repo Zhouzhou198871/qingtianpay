@@ -470,7 +470,6 @@ function App() {
   const [initialPassword, setInitialPassword] = useState('');
   const [confirmPassword, setConfirmPassword] = useState('');
   const [notice, setNotice] = useState('');
-  if (window.location.pathname.startsWith('/checkout/')) return <CheckoutPage />;
   useEffect(() => {
     let alive = true;
     apiFetch('/api/auth/bootstrap-status', { credentials: 'include' }).then(r => r.json()).then(data => { if (alive) setSetupRequired(Boolean(data.required)); }).catch(() => {});
@@ -533,5 +532,5 @@ function App() {
   </main>;
 }
 
-const Root = window.location.pathname === '/payment/launch' ? PaymentLaunch : App;
+const Root = window.location.pathname === '/payment/launch' ? PaymentLaunch : window.location.pathname.startsWith('/checkout/') ? CheckoutPage : App;
 createRoot(document.getElementById('root')).render(<Root />);
